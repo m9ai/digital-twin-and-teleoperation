@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import { VitePWA } from 'vite-plugin-pwa';
 
-const DEFAULT_SITE_URL = 'https://embodied-ai-platform.vercel.app';
+const DEFAULT_SITE_URL = 'https://ebot.m9ai.work';
 
 /** CI env wins, then .env, then the default origin. */
 function resolveSiteUrl(): string {
