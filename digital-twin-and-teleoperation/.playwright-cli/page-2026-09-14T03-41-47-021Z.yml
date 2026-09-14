@@ -1,0 +1,129 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e6]
+      - heading "ROS 2 Digital Twin & Teleoperation" [level=1] [ref=e8]
+    - generic [ref=e9]: Embodied AI Platform
+  - main [ref=e10]:
+    - generic [ref=e11]:
+      - generic [ref=e12]:
+        - generic [ref=e13]:
+          - generic [ref=e14]:
+            - img [ref=e15]
+            - generic [ref=e19]: Connected
+          - generic [ref=e20]:
+            - img [ref=e21]
+            - generic [ref=e24]: 12 ms
+          - generic [ref=e25]: ws://localhost:9090
+        - generic [ref=e27]: READY
+      - generic [ref=e28]:
+        - generic [ref=e29]:
+          - generic [ref=e30]:
+            - generic [ref=e31]:
+              - img [ref=e32]
+              - generic [ref=e37]: Digital Twin (URDF / Three.js)
+            - button "Reset camera" [ref=e41] [cursor=pointer]:
+              - img [ref=e42]
+          - generic [ref=e45]:
+            - generic [ref=e46]:
+              - img [ref=e47]
+              - generic [ref=e49]: LiDAR Point Cloud
+            - button "Pause animation" [ref=e53] [cursor=pointer]:
+              - img [ref=e54]
+        - generic [ref=e57]:
+          - generic [ref=e58]:
+            - generic [ref=e59]:
+              - img [ref=e60]
+              - generic [ref=e63]: URDF 模型
+            - generic [ref=e64] [cursor=pointer]:
+              - img [ref=e65]
+              - generic [ref=e68]: 上传 URDF
+              - generic [ref=e69]: .urdf / .xacro
+            - generic [ref=e70] [cursor=pointer]:
+              - img [ref=e71]
+              - generic [ref=e74]: 上传 Mesh 资源
+              - generic [ref=e75]: STL / DAE / OBJ，可多次追加
+            - generic [ref=e76] [cursor=pointer]:
+              - img [ref=e77]
+              - generic [ref=e81]: 上传 ZIP 包
+              - generic [ref=e82]: 包含 URDF + meshes 的压缩包
+          - generic [ref=e83]:
+            - generic [ref=e84]:
+              - img [ref=e85]
+              - generic [ref=e88]: WebRTC Video Stream
+            - generic [ref=e92]: Stream idle
+            - generic [ref=e96]:
+              - textbox "wss://robot-ip:8443/ws" [ref=e97]
+              - button "Start" [disabled] [ref=e98]:
+                - img [ref=e99]
+                - text: Start
+          - generic [ref=e101]:
+            - generic [ref=e102]:
+              - img [ref=e103]
+              - generic [ref=e105]: Telemetry
+            - generic [ref=e106]:
+              - generic [ref=e107]:
+                - generic [ref=e108]:
+                  - img [ref=e109]
+                  - generic [ref=e111]: Battery
+                - generic [ref=e112]: 84.0%
+                - generic [ref=e113]: 24.2 V
+              - generic [ref=e114]:
+                - generic [ref=e115]:
+                  - img [ref=e116]
+                  - generic [ref=e119]: Velocity
+                - generic [ref=e120]: 0.00 m/s
+                - generic [ref=e121]: 0.00 rad/s
+              - generic [ref=e122]:
+                - generic [ref=e123]:
+                  - img [ref=e124]
+                  - generic [ref=e126]: CPU Temp
+                - generic [ref=e127]: 42.0°C
+              - generic [ref=e128]:
+                - generic [ref=e129]:
+                  - img [ref=e130]
+                  - generic [ref=e132]: Joints
+                - generic [ref=e133]: "0"
+            - generic [ref=e134]:
+              - generic [ref=e136]: Battery Level
+              - generic [ref=e141]: Velocity
+              - generic [ref=e146]: CPU Temperature
+          - generic [ref=e150]:
+            - generic [ref=e151]:
+              - img [ref=e152]
+              - generic [ref=e154]: Control Desk
+            - generic [ref=e155]:
+              - generic [ref=e156]: Mode
+              - generic [ref=e157]:
+                - button "Simulation" [ref=e158] [cursor=pointer]
+                - button "Live ROS" [ref=e159] [cursor=pointer]
+            - generic [ref=e160]:
+              - img [ref=e161]
+              - textbox "ws://localhost:9090" [ref=e167]
+              - button "Set" [ref=e168] [cursor=pointer]
+            - generic [ref=e169]:
+              - generic [ref=e170]:
+                - generic [ref=e171]: Gamepad Input
+                - generic [ref=e172]: Deadzone applied
+              - generic [ref=e173]:
+                - generic [ref=e175]:
+                  - generic [ref=e176]: Linear X
+                  - generic [ref=e177]: "0.00"
+                - generic [ref=e180]:
+                  - generic [ref=e181]: Angular Z
+                  - generic [ref=e182]: "0.00"
+            - generic [ref=e184]:
+              - button "Trigger E-Stop" [ref=e185] [cursor=pointer]:
+                - img [ref=e186]
+                - text: Trigger E-Stop
+              - button "Zero Velocity" [ref=e191] [cursor=pointer]
+            - generic [ref=e192]:
+              - generic [ref=e193]:
+                - img [ref=e194]
+                - generic [ref=e197]: System Log
+              - generic [ref=e198]:
+                - generic [ref=e199]: Simulation mode active
+                - generic [ref=e200]: Disconnected from ROS bridge
+                - generic [ref=e201]: Disconnected from ROS bridge
+                - generic [ref=e202]: Simulation mode active
+                - generic [ref=e203]: Disconnected from ROS bridge

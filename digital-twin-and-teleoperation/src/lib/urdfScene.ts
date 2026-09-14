@@ -19,11 +19,11 @@ export interface SceneHandles {
   resize: () => void;
 }
 
-function createDefaultPBRMaterial(): THREE.MeshStandardMaterial {
+function createDefaultPBRMaterial(color?: number): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({
-    color: 0xc0c5c9,
-    roughness: 0.4,
-    metalness: 0.3,
+    color: color ?? 0x8899a6,
+    roughness: 0.5,
+    metalness: 0.4,
   });
 }
 
@@ -47,6 +47,37 @@ function ensurePBRMaterial(material: THREE.Material): THREE.MeshStandardMaterial
 
   material.dispose();
   return pbr;
+}
+
+const LINK_COLOR_PALETTE = [
+  0x1e5aa8, // base blue
+  0x334155, // joint dark
+  0x94a3b8, // cool grey
+  0xc0c5c9, // silver
+  0x64748b, // slate
+  0x0ea5e9, // sky
+  0xf97316, // tool orange
+  0x10b981, // emerald
+  0x8b5cf6, // violet
+  0xe11d48, // rose
+];
+
+function colorForLinkName(name: string): number {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return LINK_COLOR_PALETTE[Math.abs(hash) % LINK_COLOR_PALETTE.length];
+}
+
+function findLinkName(mesh: THREE.Object3D, robot: THREE.Object3D): string | null {
+  let node: THREE.Object3D | null = mesh.parent;
+  while (node) {
+    if (node === robot) return null;
+    if (node.name) return node.name;
+    node = node.parent;
+  }
+  return null;
 }
 
 export function createURDFScene(container: HTMLElement, urdfUrl: string): Promise<SceneHandles> {
@@ -113,12 +144,9 @@ export function createURDFScene(container: HTMLElement, urdfUrl: string): Promis
           // STL from some CAD exporters lacks smooth vertex normals.
           geom.computeVertexNormals();
 
-          const material = new THREE.MeshStandardMaterial({
-            color: 0x8899a6,
-            roughness: 0.4,
-            metalness: 0.5,
-          });
-          done(new THREE.Mesh(geom, material));
+          // Use a neutral PBR placeholder. If the URDF <visual> has no
+          // <material>, the scene post-processor will assign a per-link color.
+          done(new THREE.Mesh(geom, createDefaultPBRMaterial()));
         },
         undefined,
         (err) => done(null, err)
@@ -170,21 +198,37 @@ export function createURDFScene(container: HTMLElement, urdfUrl: string): Promis
         // robot stands upright in the Three.js scene.
         robot.rotation.x = -Math.PI / 2;
 
+        const linkMaterialCache = new Map<string, THREE.MeshStandardMaterial>();
+
         robot.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) {
             const mesh = child as THREE.Mesh;
             mesh.castShadow = true;
             mesh.receiveShadow = true;
 
-            // Ensure PBR fallback for missing or non-PBR materials.
             const current = mesh.material;
-            if (Array.isArray(current)) {
-              mesh.material = current.map((m) => ensurePBRMaterial(m));
-            } else if (current) {
-              mesh.material = ensurePBRMaterial(current);
+            const baseMaterial = Array.isArray(current) ? current[0] : current;
+
+            let material: THREE.MeshStandardMaterial;
+            const hasURDFMaterial = baseMaterial && baseMaterial.name;
+            if (hasURDFMaterial) {
+              // Preserve the URDF-defined material color/texture but upgrade
+              // the shader to PBR.
+              material = ensurePBRMaterial(baseMaterial);
             } else {
-              mesh.material = createDefaultPBRMaterial();
+              // No URDF <material> tag: assign a per-link PBR color so STL
+              // meshes and anonymous primitives don't all render grey.
+              const linkName = findLinkName(mesh, robot!) || 'default';
+              if (!linkMaterialCache.has(linkName)) {
+                material = createDefaultPBRMaterial();
+                material.color.setHex(colorForLinkName(linkName));
+                linkMaterialCache.set(linkName, material);
+              } else {
+                material = linkMaterialCache.get(linkName)!;
+              }
             }
+
+            mesh.material = material;
           }
         });
         scene.add(robot);
