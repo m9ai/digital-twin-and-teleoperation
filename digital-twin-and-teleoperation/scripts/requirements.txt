@@ -1,0 +1,4 @@
+# Offline mesh pipeline for the Web digital twin.
+#   python scripts/stl_to_glb.py meshes/ --out meshes_glb --draco
+trimesh>=4.4.0
+numpy>=1.26.0

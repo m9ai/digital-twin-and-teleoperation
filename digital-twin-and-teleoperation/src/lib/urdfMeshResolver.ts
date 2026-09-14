@@ -28,8 +28,17 @@ const MESH_REF_REGEX = /<mesh\s+filename\s*=\s*["']([^"']+)["']\s*\/?>/gi;
 // can pick the right THREE.js loader even though blob URLs have no extension.
 const blobTypeMap = new Map<string, MeshFormat>();
 
+// Blob URLs are recreated on every session, so they cannot key a persistent
+// cache. The original file identity (name + size + mtime) is used instead.
+const blobCacheKeyMap = new Map<string, string>();
+
 export function getMeshFormatForBlobUrl(url: string): MeshFormat | undefined {
   return blobTypeMap.get(url);
+}
+
+/** Stable cache key for a mesh URL, or null when the URL is already stable. */
+export function getMeshCacheKeyForUrl(url: string): string | null {
+  return blobCacheKeyMap.get(url) ?? null;
 }
 
 export function extractMeshReferences(urdfText: string): MeshReference[] {
@@ -50,6 +59,11 @@ export function extractMeshReferences(urdfText: string): MeshReference[] {
 
 function findMatchingFile(basename: string, files: File[]): File | undefined {
   return files.find((f) => f.name.toLowerCase() === basename.toLowerCase());
+}
+
+/** Identity of an uploaded mesh file, stable across browser sessions. */
+function meshIdentityKey(path: string, file: File): string {
+  return `mesh:${path}:${file.size}:${file.lastModified}`;
 }
 
 function detectFormat(basename: string): MeshFormat | undefined {
@@ -78,6 +92,7 @@ export function resolveMeshReferences(
       if (format) {
         blobTypeMap.set(blobUrl, format);
       }
+      blobCacheKeyMap.set(blobUrl, meshIdentityKey(ref.relativePath || ref.basename, file));
       blobMap.set(ref.raw, blobUrl);
       resolved.push(ref);
     } else {

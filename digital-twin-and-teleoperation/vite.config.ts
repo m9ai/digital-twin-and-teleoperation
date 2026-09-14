@@ -117,6 +117,31 @@ export default defineConfig({
               cacheableResponse: { statuses: [0, 200] },
             },
           },
+          {
+            // Robot meshes (.stl/.glb/.gltf/.dae/.obj) are big and immutable:
+            // CacheFirst turns the second load of a model into a local read and
+            // lets a previously opened robot be rendered with no network.
+            urlPattern: /\.(stl|glb|gltf|bin|dae|obj)(\?.*)?$/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'robot-mesh-cache',
+              expiration: { maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [0, 200] },
+              // Draco/GLB buffers can be requested with Range headers.
+              rangeRequests: true,
+            },
+          },
+          {
+            // URDF text is small: revalidate in the background so edits show up
+            // while still being available offline.
+            urlPattern: /\.(urdf|xacro|xml)(\?.*)?$/i,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'robot-urdf-cache',
+              expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 7 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
         ],
       },
       devOptions: { enabled: false },

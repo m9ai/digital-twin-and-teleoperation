@@ -2,7 +2,7 @@ import { Layout } from './components/Layout';
 import { RobotViewer } from './components/RobotViewer';
 import { TelemetryPanel } from './components/TelemetryPanel';
 import { ControlDesk } from './components/ControlDesk';
-import { VideoStream } from './components/VideoStream';
+import { VideoWall } from './components/VideoWall';
 import { PointCloud } from './components/PointCloud';
 import { JointJogPanel } from './components/JointJogPanel';
 import { TrajectoryPanel } from './components/TrajectoryPanel';
@@ -13,6 +13,7 @@ import { useROS } from './hooks/useROS';
 import { useHeartbeat } from './hooks/useHeartbeat';
 import { useTrajectoryRecorder } from './hooks/useTrajectoryRecorder';
 import { useTrajectoryPlayback } from './hooks/useTrajectoryPlayback';
+import { useEStopHotkey } from './hooks/useEStopHotkey';
 import { useURDFStore } from './store/urdfStore';
 import { useEffect } from 'react';
 
@@ -21,6 +22,8 @@ function App() {
   useHeartbeat();
   useTrajectoryRecorder();
   useTrajectoryPlayback();
+  // Space latches the emergency stop from anywhere in the workspace.
+  useEStopHotkey();
 
   // Load the bundled demo URDF into the store so that its joints can be
   // jogged and edited without an upload.
@@ -46,7 +49,7 @@ function App() {
           </div>
           <div className="flex flex-col gap-4 min-h-0 overflow-y-auto">
             <URDFUploadPanel />
-            <VideoStream />
+            <VideoWall />
             <TelemetryPanel />
             <ControlDesk />
           </div>

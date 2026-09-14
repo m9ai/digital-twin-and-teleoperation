@@ -1,11 +1,24 @@
 import * as ROSLIB from 'roslib';
-import type { JointState, RobotTelemetry, Twist } from '@/types';
+import type { JointState, Pose, RobotTelemetry, Twist } from '@/types';
+import { buildMockJointState, buildMockTelemetry } from '@/lib/mockRobot';
+import type { URDFJointDefinition } from '@/lib/urdfJoints';
 
 export type MessageHandler<T> = (msg: T) => void;
+
+/** Default ROS interface names; overridable from the UI if a stack differs. */
+export const ROS_TOPICS = {
+  jointStates: '/joint_states',
+  jointCommand: '/joint_command',
+  telemetry: '/robot_telemetry',
+  cmdVel: '/cmd_vel',
+  eStop: '/emergency_stop',
+  ikTarget: '/ik_target',
+} as const;
 
 export class ROSClient {
   private ros: ROSLIB.Ros | null = null;
   private topics: Map<string, ROSLIB.Topic> = new Map();
+  private publishers: Map<string, ROSLIB.Topic> = new Map();
   private services: Map<string, ROSLIB.Service> = new Map();
   private pingInterval: number | null = null;
 
@@ -42,6 +55,7 @@ export class ROSClient {
     this.stopPing();
     this.topics.forEach((topic) => topic.unsubscribe());
     this.topics.clear();
+    this.publishers.clear();
     if (this.ros) {
       this.ros.close();
       this.ros = null;
@@ -68,37 +82,57 @@ export class ROSClient {
     };
   }
 
+  /**
+   * Publish on a topic, reusing a single advertiser per name. Creating a fresh
+   * `ROSLIB.Topic` per message (as a naive implementation does) re-advertises
+   * the topic on the bridge every time and leaks handles.
+   */
   publish(topicName: string, messageType: string, payload: Record<string, unknown>): void {
     if (!this.ros) {
       throw new Error('ROS not connected');
     }
 
-    const topic = new ROSLIB.Topic({
-      ros: this.ros,
-      name: topicName,
-      messageType,
-    });
+    const key = `${topicName}|${messageType}`;
+    let topic = this.publishers.get(key);
+    if (!topic) {
+      topic = new ROSLIB.Topic({ ros: this.ros, name: topicName, messageType });
+      this.publishers.set(key, topic);
+    }
 
-    const message = new ROSLIB.Message(payload);
-    topic.publish(message);
+    topic.publish(new ROSLIB.Message(payload));
   }
 
   publishTwist(cmd: Twist): void {
-    this.publish('/cmd_vel', 'geometry_msgs/Twist', cmd as unknown as Record<string, unknown>);
+    this.publish(ROS_TOPICS.cmdVel, 'geometry_msgs/Twist', cmd as unknown as Record<string, unknown>);
   }
 
   /** Publish a manual jog target as a `sensor_msgs/JointState` on /joint_command. */
   publishJointCommand(names: string[], positions: number[]): void {
-    const now = Date.now() / 1000;
-    this.publish('/joint_command', 'sensor_msgs/JointState', {
-      header: {
-        stamp: { secs: Math.floor(now), nsecs: Math.floor((now % 1) * 1e9) },
-        frame_id: '',
-      },
+    this.publish(ROS_TOPICS.jointCommand, 'sensor_msgs/JointState', {
+      header: rosHeader(''),
       name: names,
       position: positions,
       velocity: [],
       effort: [],
+    });
+  }
+
+  /** Emergency stop latch: `std_msgs/Bool` on /emergency_stop. */
+  publishEStop(active: boolean): void {
+    this.publish(ROS_TOPICS.eStop, 'std_msgs/Bool', { data: active });
+  }
+
+  /**
+   * Cartesian target for the IK solver: `geometry_msgs/PoseStamped` on
+   * /ik_target, expressed in the robot base frame.
+   */
+  publishPoseStamped(pose: Pose, frameId = 'base_link'): void {
+    this.publish(ROS_TOPICS.ikTarget, 'geometry_msgs/PoseStamped', {
+      header: rosHeader(frameId),
+      pose: {
+        position: pose.position,
+        orientation: pose.orientation,
+      },
     });
   }
 
@@ -143,7 +177,32 @@ export class ROSClient {
   }
 }
 
-const FALLBACK_JOINTS = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5'];
+/** `std_msgs/Header` built from wall clock time. */
+function rosHeader(frameId: string) {
+  const now = Date.now() / 1000;
+  return {
+    stamp: { secs: Math.floor(now), nsecs: Math.floor((now % 1) * 1e9) },
+    frame_id: frameId,
+  };
+}
+
+export { rosHeader };
+
+const FALLBACK_JOINTS: URDFJointDefinition[] = [
+  'joint1',
+  'joint2',
+  'joint3',
+  'joint4',
+  'joint5',
+].map((name) => ({
+  name,
+  type: 'revolute' as const,
+  lower: -Math.PI,
+  upper: Math.PI,
+  velocity: 1,
+  effort: 10,
+  axis: [0, 0, 1] as [number, number, number],
+}));
 
 /**
  * Build the simulated /joint_states message.
@@ -153,34 +212,18 @@ const FALLBACK_JOINTS = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5'];
  * generated animation for the joints they are driving.
  */
 export function buildJointStateMessage(
-  jointNames: string[] = FALLBACK_JOINTS,
+  joints: URDFJointDefinition[] | string[] = FALLBACK_JOINTS,
   targets: Record<string, number> = {},
   jogActive = false
 ): JointState {
-  const names = jointNames.length > 0 ? jointNames : FALLBACK_JOINTS;
-  const time = Date.now() / 1000;
+  const definitions: URDFJointDefinition[] =
+    joints.length > 0 && typeof joints[0] === 'string'
+      ? (joints as string[]).map((name) => FALLBACK_JOINTS.find((j) => j.name === name) ?? { ...FALLBACK_JOINTS[0], name })
+      : (joints as URDFJointDefinition[]);
 
-  return {
-    name: names,
-    position: names.map((name, i) => {
-      if (jogActive && targets[name] !== undefined) return targets[name];
-      return Math.sin(time * 0.8 + i) * 0.6;
-    }),
-    velocity: names.map((name, i) => {
-      if (jogActive && targets[name] !== undefined) return 0;
-      return Math.cos(time * 0.8 + i) * 0.3;
-    }),
-    effort: names.map(() => Math.random() * 2),
-  };
+  return buildMockJointState(definitions.length > 0 ? definitions : FALLBACK_JOINTS, targets, jogActive);
 }
 
 export function buildTelemetryMessage(): RobotTelemetry {
-  return {
-    batteryPercent: 70 + Math.random() * 25,
-    batteryVoltage: 22 + Math.random() * 4,
-    linearVelocity: Math.random() * 2,
-    angularVelocity: (Math.random() - 0.5) * 3,
-    cpuTemp: 35 + Math.random() * 25,
-    timestamp: Date.now(),
-  };
+  return buildMockTelemetry();
 }

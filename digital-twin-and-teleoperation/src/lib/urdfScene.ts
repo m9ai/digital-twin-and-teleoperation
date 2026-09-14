@@ -1,12 +1,21 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import URDFLoader from 'urdf-loader';
-import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
-import { ColladaLoader } from 'three/examples/jsm/loaders/ColladaLoader.js';
-import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { getMeshFormatForBlobUrl } from '@/lib/urdfMeshResolver';
-import type { JointState } from '@/types';
+import { loadRobotMesh } from '@/lib/scene/modelLoader';
+import {
+  createSceneRuntime,
+  type FrameCallback,
+  type SceneRuntime,
+} from '@/lib/scene/runtime';
+import {
+  colorForLinkName,
+  createDefaultPBRMaterial,
+  ensurePBRMaterial,
+  findLinkName,
+} from '@/lib/scene/materials';
+import type { SafetyHighlightEntry } from '@/lib/scene/safetyHighlight';
+import type { LinkNode } from '@/lib/safetyMonitor';
+import type { CameraPresetId, GizmoMode, JointState, Pose } from '@/types';
 
 export interface SceneHandles {
   scene: THREE.Scene;
@@ -14,7 +23,11 @@ export interface SceneHandles {
   renderer: THREE.WebGLRenderer;
   controls: OrbitControls;
   robot: THREE.Object3D | null;
+  /** Object defining the TCP (tool0), or null when the model has no links. */
+  tcp: THREE.Object3D | null;
   applyJointState: (state: JointState) => void;
+  /** Low-level setter used by the interpolated render loop. */
+  applyJointPositions: (names: string[], values: number[]) => void;
   dispose: () => void;
   resize: () => void;
   /**
@@ -27,6 +40,8 @@ export interface SceneHandles {
   setTrajectoryPath: (points: THREE.Vector3[] | null) => void;
   /** Move the playhead marker along the drawn path. */
   setPathPlayhead: (point: THREE.Vector3 | null) => void;
+  /** Render loop, gizmo, camera presets and safety highlighting. */
+  runtime: SceneRuntime | null;
 }
 
 /** The last link of the kinematic chain: a link that is no joint's parent. */
@@ -109,70 +124,17 @@ export function createTrajectoryPathOverlay(scene: THREE.Scene) {
   return { setTrajectoryPath, setPathPlayhead, dispose };
 }
 
-function createDefaultPBRMaterial(color?: number): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({
-    color: color ?? 0x8899a6,
-    roughness: 0.5,
-    metalness: 0.4,
-  });
+interface SceneShell {
+  scene: THREE.Scene;
+  camera: THREE.PerspectiveCamera;
+  renderer: THREE.WebGLRenderer;
+  controls: OrbitControls;
+  grid: THREE.GridHelper;
 }
 
-function ensurePBRMaterial(material: THREE.Material): THREE.MeshStandardMaterial {
-  if (material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshPhysicalMaterial) {
-    return material;
-  }
-
-  const pbr = createDefaultPBRMaterial();
-
-  if ('color' in material && material.color instanceof THREE.Color) {
-    pbr.color.copy(material.color);
-  }
-  if ('map' in material && material.map instanceof THREE.Texture) {
-    pbr.map = material.map;
-  }
-  if ('transparent' in material && typeof material.transparent === 'boolean') {
-    pbr.transparent = material.transparent;
-    pbr.opacity = 'opacity' in material && typeof material.opacity === 'number' ? material.opacity : 1;
-  }
-
-  material.dispose();
-  return pbr;
-}
-
-const LINK_COLOR_PALETTE = [
-  0x1e5aa8, // base blue
-  0x334155, // joint dark
-  0x94a3b8, // cool grey
-  0xc0c5c9, // silver
-  0x64748b, // slate
-  0x0ea5e9, // sky
-  0xf97316, // tool orange
-  0x10b981, // emerald
-  0x8b5cf6, // violet
-  0xe11d48, // rose
-];
-
-function colorForLinkName(name: string): number {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return LINK_COLOR_PALETTE[Math.abs(hash) % LINK_COLOR_PALETTE.length];
-}
-
-function findLinkName(mesh: THREE.Object3D, robot: THREE.Object3D): string | null {
-  let node: THREE.Object3D | null = mesh.parent;
-  while (node) {
-    if (node === robot) return null;
-    if (node.name) return node.name;
-    node = node.parent;
-  }
-  return null;
-}
-
-export function createURDFScene(container: HTMLElement, urdfUrl: string): Promise<SceneHandles> {
-  const width = container.clientWidth;
-  const height = container.clientHeight;
+function createSceneShell(container: HTMLElement, options: { shadows?: boolean } = {}): SceneShell {
+  const width = Math.max(container.clientWidth, 1);
+  const height = Math.max(container.clientHeight, 1);
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0f172a);
@@ -183,7 +145,7 @@ export function createURDFScene(container: HTMLElement, urdfUrl: string): Promis
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setSize(width, height);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.shadowMap.enabled = true;
+  if (options.shadows) renderer.shadowMap.enabled = true;
   container.appendChild(renderer.domElement);
 
   const controls = new OrbitControls(camera, renderer.domElement);
@@ -191,29 +153,43 @@ export function createURDFScene(container: HTMLElement, urdfUrl: string): Promis
   controls.dampingFactor = 0.05;
   controls.target.set(0, 0.5, 0);
 
-  const ambient = new THREE.AmbientLight(0xffffff, 0.4);
+  const ambient = new THREE.AmbientLight(0xffffff, options.shadows ? 0.4 : 0.6);
   scene.add(ambient);
 
-  const hemisphere = new THREE.HemisphereLight(0xdbeafe, 0x1e293b, 0.8);
-  scene.add(hemisphere);
+  if (options.shadows) {
+    const hemisphere = new THREE.HemisphereLight(0xdbeafe, 0x1e293b, 0.8);
+    scene.add(hemisphere);
 
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
-  dirLight.position.set(3, 5, 3);
-  dirLight.castShadow = true;
-  scene.add(dirLight);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    dirLight.position.set(3, 5, 3);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
 
-  const fillLight = new THREE.DirectionalLight(0xa5f3fc, 0.6);
-  fillLight.position.set(-3, 2, -3);
-  scene.add(fillLight);
+    const fillLight = new THREE.DirectionalLight(0xa5f3fc, 0.6);
+    fillLight.position.set(-3, 2, -3);
+    scene.add(fillLight);
+  } else {
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+    dirLight.position.set(2, 4, 2);
+    scene.add(dirLight);
+  }
 
   const grid = new THREE.GridHelper(10, 50, 0x334155, 0x1e293b);
   scene.add(grid);
 
-  const axes = new THREE.AxesHelper(0.5);
-  scene.add(axes);
+  return { scene, camera, renderer, controls, grid };
+}
+
+export function createURDFScene(
+  container: HTMLElement,
+  urdfUrl: string,
+  options: { onPoseChange?: (pose: Pose, phase: 'drag' | 'end') => void } = {}
+): Promise<SceneHandles> {
+  const { scene, camera, renderer, controls } = createSceneShell(container, { shadows: true });
+  scene.add(new THREE.AxesHelper(0.5));
 
   let robot: THREE.Object3D | null = null;
-  let animationId: number;
+  let runtime: SceneRuntime | null = null;
 
   const loader = new URDFLoader() as unknown as {
     loadMeshCb: (
@@ -222,54 +198,7 @@ export function createURDFScene(container: HTMLElement, urdfUrl: string): Promis
       done: (mesh: THREE.Object3D | null, err?: unknown) => void
     ) => void;
   };
-  loader.loadMeshCb = (path, manager, done) => {
-    const format = getMeshFormatForBlobUrl(path);
-    const lowerPath = path.toLowerCase();
-
-    if (format === 'stl' || lowerPath.endsWith('.stl')) {
-      const stlLoader = new STLLoader(manager);
-      stlLoader.load(
-        path,
-        (geom) => {
-          // STL from some CAD exporters lacks smooth vertex normals.
-          geom.computeVertexNormals();
-
-          // Use a neutral PBR placeholder. If the URDF <visual> has no
-          // <material>, the scene post-processor will assign a per-link color.
-          done(new THREE.Mesh(geom, createDefaultPBRMaterial()));
-        },
-        undefined,
-        (err) => done(null, err)
-      );
-    } else if (format === 'gltf' || lowerPath.endsWith('.glb') || lowerPath.endsWith('.gltf')) {
-      const gltfLoader = new GLTFLoader(manager);
-      gltfLoader.load(
-        path,
-        (gltf) => done(gltf.scene),
-        undefined,
-        (err) => done(null, err)
-      );
-    } else if (format === 'dae' || lowerPath.endsWith('.dae')) {
-      const daeLoader = new ColladaLoader(manager);
-      daeLoader.load(
-        path,
-        (dae) => done(dae.scene),
-        undefined,
-        (err) => done(null, err)
-      );
-    } else if (format === 'obj' || lowerPath.endsWith('.obj')) {
-      const objLoader = new OBJLoader(manager);
-      objLoader.load(
-        path,
-        (obj) => done(obj),
-        undefined,
-        (err) => done(null, err)
-      );
-    } else {
-      console.warn(`URDFLoader: Could not load model at ${path}.\nNo loader available`);
-      done(null);
-    }
-  };
+  loader.loadMeshCb = (path, manager, done) => loadRobotMesh(path, manager, done);
 
   return new Promise((resolve, reject) => {
     fetch(urdfUrl)
@@ -331,23 +260,31 @@ export function createURDFScene(container: HTMLElement, urdfUrl: string): Promis
           joints: Record<string, { setJointValue: (...values: number[]) => void; angle?: number }>;
         }).joints;
 
-        const applyJointState = (state: JointState) => {
+        const applyJointPositions = (names: string[], values: number[]) => {
           if (!robot) return;
           let changed = false;
-          state.name.forEach((jointName, index) => {
-            const joint = urdfJoints?.[jointName];
+          names.forEach((name, index) => {
+            const joint = urdfJoints?.[name];
             if (joint && typeof joint.setJointValue === 'function') {
-              const value = state.position[index] ?? 0;
-              joint.setJointValue(value);
+              joint.setJointValue(values[index] ?? 0);
               changed = true;
             }
           });
-          if (changed) {
-            robot.updateMatrixWorld(true);
-          }
+          if (changed) robot.updateMatrixWorld(true);
+        };
+
+        const applyJointState = (state: JointState) => {
+          applyJointPositions(
+            state.name,
+            state.name.map((_, index) => state.position[index] ?? 0)
+          );
         };
 
         const endEffector = findEndEffectorLink(robot);
+        // tool0 convention: the TCP sits at the end-effector link origin.
+        const tcp = new THREE.Object3D();
+        tcp.name = 'tcp_frame';
+        (endEffector ?? robot).add(tcp);
 
         const computeEndEffectorPath = (samples: number[][], jointNames: string[]): THREE.Vector3[] => {
           if (!robot || !endEffector || !urdfJoints) return [];
@@ -358,7 +295,7 @@ export function createURDFScene(container: HTMLElement, urdfUrl: string): Promis
           for (const sample of samples) {
             jointNames.forEach((name, i) => urdfJoints[name]?.setJointValue(sample[i] ?? 0));
             robot.updateMatrixWorld(true);
-            points.push(endEffector.getWorldPosition(new THREE.Vector3()));
+            points.push(tcp.getWorldPosition(new THREE.Vector3()));
           }
 
           // Restore the live pose; the whole sweep is synchronous so it never
@@ -371,15 +308,20 @@ export function createURDFScene(container: HTMLElement, urdfUrl: string): Promis
 
         const overlay = createTrajectoryPathOverlay(scene);
 
-        const animate = () => {
-          animationId = requestAnimationFrame(animate);
-          controls.update();
-          renderer.render(scene, camera);
-        };
-        animate();
+        runtime = createSceneRuntime({
+          scene,
+          camera,
+          renderer,
+          controls,
+          container,
+          root: robot,
+          tcp,
+          onPoseChange: options.onPoseChange,
+        });
+        runtime.start();
 
         const dispose = () => {
-          cancelAnimationFrame(animationId);
+          runtime?.dispose();
           overlay.dispose();
           controls.dispose();
           renderer.dispose();
@@ -388,13 +330,7 @@ export function createURDFScene(container: HTMLElement, urdfUrl: string): Promis
           }
         };
 
-        const resize = () => {
-          const w = container.clientWidth;
-          const h = container.clientHeight;
-          camera.aspect = w / h;
-          camera.updateProjectionMatrix();
-          renderer.setSize(w, h);
-        };
+        const resize = () => runtime?.resize();
 
         resolve({
           scene,
@@ -402,48 +338,29 @@ export function createURDFScene(container: HTMLElement, urdfUrl: string): Promis
           renderer,
           controls,
           robot,
+          tcp,
           applyJointState,
+          applyJointPositions,
           dispose,
           resize,
           computeEndEffectorPath,
           setTrajectoryPath: overlay.setTrajectoryPath,
           setPathPlayhead: overlay.setPathPlayhead,
+          runtime,
         });
       })
       .catch((err: unknown) => reject(err));
   });
 }
 
-export function createFallbackScene(container: HTMLElement): SceneHandles {
-  const width = container.clientWidth;
-  const height = container.clientHeight;
-
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0f172a);
-
-  const camera = new THREE.PerspectiveCamera(50, width / height, 0.01, 100);
-  camera.position.set(1.5, 1.2, 2);
-
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  renderer.setSize(width, height);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  container.appendChild(renderer.domElement);
-
-  const controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.target.set(0, 0.5, 0);
-
-  const ambient = new THREE.AmbientLight(0xffffff, 0.6);
-  scene.add(ambient);
-
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-  dirLight.position.set(2, 4, 2);
-  scene.add(dirLight);
-
-  const grid = new THREE.GridHelper(10, 50, 0x334155, 0x1e293b);
-  scene.add(grid);
+export function createFallbackScene(
+  container: HTMLElement,
+  options: { onPoseChange?: (pose: Pose, phase: 'drag' | 'end') => void } = {}
+): SceneHandles {
+  const { scene, camera, renderer, controls } = createSceneShell(container);
 
   const robotGroup = new THREE.Group();
+  robotGroup.name = 'fallback_robot';
   const jointMaterial = new THREE.MeshStandardMaterial({ color: 0x334155 });
   const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x1e5aa8 });
   const linkGreyMaterial = new THREE.MeshStandardMaterial({ color: 0x94a3b8 });
@@ -452,37 +369,44 @@ export function createFallbackScene(container: HTMLElement): SceneHandles {
 
   // Base link
   const base = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.15, 0.45), baseMaterial);
+  base.name = 'base';
   base.position.y = 0.075;
   base.castShadow = true;
   robotGroup.add(base);
 
   // Joint 1: waist (rotate around z)
   const joint1Housing = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.1, 24), jointMaterial);
+  joint1Housing.name = 'joint1_housing';
   joint1Housing.position.y = 0.15;
   joint1Housing.castShadow = true;
   robotGroup.add(joint1Housing);
 
   const joint1Pivot = new THREE.Group();
+  joint1Pivot.name = 'joint1_pivot';
   joint1Pivot.position.y = 0.15;
   robotGroup.add(joint1Pivot);
 
   const link1 = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.5, 16), linkGreyMaterial);
+  link1.name = 'link1';
   link1.position.y = 0.25;
   link1.castShadow = true;
   joint1Pivot.add(link1);
 
   // Joint 2: shoulder (rotate around y)
   const joint2Housing = new THREE.Mesh(new THREE.SphereGeometry(0.075, 24, 24), jointMaterial);
+  joint2Housing.name = 'joint2_housing';
   joint2Housing.position.y = 0.5;
   joint2Housing.castShadow = true;
   joint1Pivot.add(joint2Housing);
 
   const joint2Pivot = new THREE.Group();
+  joint2Pivot.name = 'joint2_pivot';
   joint2Pivot.position.y = 0.5;
   joint1Pivot.add(joint2Pivot);
 
   // Link 2: upper arm along +x (Three.js cylinder y-up; rotate -90 deg around z)
   const link2 = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.55, 16), linkSilverMaterial);
+  link2.name = 'link2';
   link2.rotation.z = -Math.PI / 2;
   link2.position.x = 0.275;
   link2.castShadow = true;
@@ -490,16 +414,19 @@ export function createFallbackScene(container: HTMLElement): SceneHandles {
 
   // Joint 3: elbow (rotate around y)
   const joint3Housing = new THREE.Mesh(new THREE.SphereGeometry(0.065, 24, 24), jointMaterial);
+  joint3Housing.name = 'joint3_housing';
   joint3Housing.position.x = 0.55;
   joint3Housing.castShadow = true;
   joint2Pivot.add(joint3Housing);
 
   const joint3Pivot = new THREE.Group();
+  joint3Pivot.name = 'joint3_pivot';
   joint3Pivot.position.x = 0.55;
   joint2Pivot.add(joint3Pivot);
 
   // Link 3: forearm along +x (Three.js cylinder y-up; rotate -90 deg around z)
   const link3 = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.45, 16), linkGreyMaterial);
+  link3.name = 'link3';
   link3.rotation.z = -Math.PI / 2;
   link3.position.x = 0.225;
   link3.castShadow = true;
@@ -507,51 +434,51 @@ export function createFallbackScene(container: HTMLElement): SceneHandles {
 
   // Joint 4: wrist roll (rotate around z)
   const joint4Housing = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.08, 24), jointMaterial);
+  joint4Housing.name = 'joint4_housing';
   joint4Housing.position.x = 0.45;
   joint4Housing.castShadow = true;
   joint3Pivot.add(joint4Housing);
 
   const joint4Pivot = new THREE.Group();
+  joint4Pivot.name = 'joint4_pivot';
   joint4Pivot.position.x = 0.45;
   joint3Pivot.add(joint4Pivot);
 
   // Link 4: wrist segment along z
   const link4 = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.2, 16), linkSilverMaterial);
+  link4.name = 'link4';
   link4.position.y = 0.1;
   link4.castShadow = true;
   joint4Pivot.add(link4);
 
   // Joint 5: wrist bend (rotate around x)
   const joint5Housing = new THREE.Mesh(new THREE.SphereGeometry(0.045, 24, 24), jointMaterial);
+  joint5Housing.name = 'joint5_housing';
   joint5Housing.position.y = 0.2;
   joint5Housing.castShadow = true;
   joint4Pivot.add(joint5Housing);
 
   const joint5Pivot = new THREE.Group();
+  joint5Pivot.name = 'joint5_pivot';
   joint5Pivot.position.y = 0.2;
   joint4Pivot.add(joint5Pivot);
 
   // Link 5: tool flange along z
   const link5 = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.12, 16), linkGreyMaterial);
+  link5.name = 'link5';
   link5.position.y = 0.06;
   link5.castShadow = true;
   joint5Pivot.add(link5);
 
   // Tool / end effector
   const tool0 = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.08, 0.04), toolMaterial);
+  tool0.name = 'tool0';
   tool0.position.y = 0.16;
   tool0.castShadow = true;
   joint5Pivot.add(tool0);
 
   scene.add(robotGroup);
-
-  let animationId: number;
-  const animate = () => {
-    animationId = requestAnimationFrame(animate);
-    controls.update();
-    renderer.render(scene, camera);
-  };
-  animate();
+  robotGroup.updateMatrixWorld(true);
 
   const parts: Record<string, THREE.Object3D> = {
     joint1: joint1Pivot,
@@ -572,6 +499,7 @@ export function createFallbackScene(container: HTMLElement): SceneHandles {
       const part = parts[name];
       if (part) part.rotation[axisForJoint(name)] = values[i] ?? 0;
     });
+    robotGroup.updateMatrixWorld(true);
   };
 
   const applyJointState = (state: JointState) => {
@@ -587,16 +515,50 @@ export function createFallbackScene(container: HTMLElement): SceneHandles {
 
     for (const sample of samples) {
       setFallbackJoints(jointNames, sample);
-      robotGroup.updateMatrixWorld(true);
       points.push(tool0.getWorldPosition(new THREE.Vector3()));
     }
 
     setFallbackJoints(jointNames, saved);
-    robotGroup.updateMatrixWorld(true);
     return points;
   };
 
   const overlay = createTrajectoryPathOverlay(scene);
+
+  /** Which link each joint drives, so safety highlighting can find a mesh. */
+  const jointLinkMap: Record<string, string> = {
+    joint1: 'link1',
+    joint2: 'link2',
+    joint3: 'link3',
+    joint4: 'link4',
+    joint5: 'link5',
+  };
+
+  const linkNodes: LinkNode[] = [base, link1, link2, link3, link4, link5, tool0].map((mesh) => ({
+    name: mesh.name,
+    object: mesh,
+  }));
+
+  const chain = ['base', 'link1', 'link2', 'link3', 'link4', 'link5', 'tool0'];
+  const adjacentPairs = new Set<string>();
+  for (let i = 0; i < chain.length - 1; i++) {
+    adjacentPairs.add(`${chain[i]} ${chain[i + 1]}`);
+    adjacentPairs.add(`${chain[i + 1]} ${chain[i]}`);
+  }
+
+  const runtime = createSceneRuntime({
+    scene,
+    camera,
+    renderer,
+    controls,
+    container,
+    root: robotGroup,
+    tcp: tool0,
+    jointLinkMap,
+    linkNodes,
+    adjacentPairs,
+    onPoseChange: options.onPoseChange,
+  });
+  runtime.start();
 
   return {
     scene,
@@ -604,12 +566,15 @@ export function createFallbackScene(container: HTMLElement): SceneHandles {
     renderer,
     controls,
     robot: robotGroup,
+    tcp: tool0,
     applyJointState,
+    applyJointPositions: setFallbackJoints,
     computeEndEffectorPath,
     setTrajectoryPath: overlay.setTrajectoryPath,
     setPathPlayhead: overlay.setPathPlayhead,
+    runtime,
     dispose: () => {
-      cancelAnimationFrame(animationId);
+      runtime.dispose();
       overlay.dispose();
       controls.dispose();
       renderer.dispose();
@@ -617,12 +582,9 @@ export function createFallbackScene(container: HTMLElement): SceneHandles {
         container.removeChild(renderer.domElement);
       }
     },
-    resize: () => {
-      const w = container.clientWidth;
-      const h = container.clientHeight;
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
-    },
+    resize: () => runtime.resize(),
   };
 }
+
+/** Re-exported so consumers can type gizmo / camera controls without deep imports. */
+export type { FrameCallback, SceneRuntime, CameraPresetId, GizmoMode, SafetyHighlightEntry, Pose };

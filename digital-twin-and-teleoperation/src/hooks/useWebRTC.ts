@@ -12,6 +12,76 @@ export type SignalingMode = 'ws' | 'whep' | null;
 const DEFAULT_ICE_SERVERS: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }];
 const WHEP_ICE_GATHERING_TIMEOUT_MS = 2000;
 const WHEP_TRICKLE_CONTENT_TYPE = 'application/trickle-ice-sdpfrag';
+/** How often WebRTC statistics are sampled for the latency / bitrate readout. */
+const STATS_INTERVAL_MS = 1000;
+
+export interface StreamStats {
+  /** End-to-end estimate: half RTT + jitter buffer delay. */
+  latencyMs: number;
+  rttMs: number;
+  jitterBufferMs: number;
+  kbps: number;
+  framesPerSecond: number;
+  packetsLost: number;
+}
+
+interface InboundRtpSample {
+  jitterBufferDelay?: number;
+  jitterBufferEmittedCount?: number;
+  bytesReceived?: number;
+  packetsLost?: number;
+  framesPerSecond?: number;
+}
+
+interface CandidatePairSample {
+  currentRoundTripTime?: number;
+  state?: string;
+  nominated?: boolean;
+}
+
+/**
+ * Derive a user-facing latency figure.
+ *
+ * Glass-to-glass latency is dominated by network RTT (half of it, one way) and
+ * the receiver jitter buffer, which is exactly the number an operator cares
+ * about when judging whether teleoperation is safe.
+ */
+function readStats(report: RTCStatsReport, elapsedSeconds: number, lastBytes: number): {
+  stats: Omit<StreamStats, 'latencyMs'>;
+  bytesReceived: number;
+} {
+  let inbound: InboundRtpSample = {};
+  let pair: CandidatePairSample = {};
+
+  report.forEach((entry) => {
+    const raw = entry as unknown as { type?: string; kind?: string } & InboundRtpSample &
+      CandidatePairSample;
+    if (raw.type === 'inbound-rtp' && (raw.kind === 'video' || raw.kind === undefined)) {
+      inbound = raw;
+    }
+    if (raw.type === 'candidate-pair' && (raw.nominated || raw.state === 'succeeded')) {
+      pair = raw;
+    }
+  });
+
+  const rttMs = pair?.currentRoundTripTime !== undefined ? pair.currentRoundTripTime * 1000 : 0;
+  const jitterTotal = inbound?.jitterBufferDelay ?? 0;
+  const jitterCount = inbound?.jitterBufferEmittedCount ?? 0;
+  const jitterBufferMs = jitterCount > 0 ? (jitterTotal / jitterCount) * 1000 : 0;
+  const bytes = inbound?.bytesReceived ?? 0;
+  const kbps = elapsedSeconds > 0 ? ((bytes - lastBytes) * 8) / 1000 / elapsedSeconds : 0;
+
+  return {
+    stats: {
+      rttMs,
+      jitterBufferMs,
+      kbps: Math.max(0, kbps),
+      framesPerSecond: inbound?.framesPerSecond ?? 0,
+      packetsLost: inbound?.packetsLost ?? 0,
+    },
+    bytesReceived: bytes,
+  };
+}
 
 export function parseSignalingMode(url: string): SignalingMode {
   if (!url.trim()) return null;
@@ -51,6 +121,7 @@ export function useWebRTC(signalingUrl?: string, streamId = 'camera_front') {
   const [state, setState] = useState<WebRTCState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [stats, setStats] = useState<StreamStats | null>(null);
 
   const mode = parseSignalingMode(signalingUrl ?? '');
 
@@ -87,6 +158,7 @@ export function useWebRTC(signalingUrl?: string, streamId = 'camera_front') {
 
     setState('idle');
     setLatencyMs(null);
+    setStats(null);
     setError(null);
   }, []);
 
@@ -217,11 +289,41 @@ export function useWebRTC(signalingUrl?: string, streamId = 'camera_front') {
       setState('failed');
       setError(message);
     }
-  }, [signalingUrl, streamId, disconnect, connectViaWebSocket, connectViaWhep, patchCandidates]);
+  }, [signalingUrl, disconnect, connectViaWebSocket, connectViaWhep, patchCandidates]);
 
   useEffect(() => {
     return () => disconnect();
   }, [disconnect]);
 
-  return { videoRef, state, error, connect, disconnect, latencyMs, mode };
+  /** Sample connection statistics while the stream is up. */
+  useEffect(() => {
+    if (state !== 'connected') {
+      setStats(null);
+      return;
+    }
+
+    let lastBytes = 0;
+    let lastAt = performance.now();
+
+    const id = window.setInterval(() => {
+      const pc = pcRef.current;
+      if (!pc) return;
+
+      void pc.getStats().then((report) => {
+        const now = performance.now();
+        const elapsed = Math.max((now - lastAt) / 1000, 0.001);
+        const { stats: sample, bytesReceived } = readStats(report, elapsed, lastBytes);
+        lastBytes = bytesReceived;
+        lastAt = now;
+
+        const latency = sample.rttMs / 2 + sample.jitterBufferMs;
+        setStats({ ...sample, latencyMs: latency });
+        setLatencyMs(latency);
+      });
+    }, STATS_INTERVAL_MS);
+
+    return () => window.clearInterval(id);
+  }, [state]);
+
+  return { videoRef, state, error, connect, disconnect, latencyMs, stats, mode };
 }

@@ -4,11 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "dev": "npm run prepare:assets && vite",
+    "build": "npm run prepare:assets && tsc && vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepare:assets": "node scripts/copy-draco.mjs",
+    "convert:meshes": "python3 scripts/stl_to_glb.py"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

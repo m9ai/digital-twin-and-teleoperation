@@ -1,23 +1,27 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { createURDFScene, createFallbackScene, type SceneHandles } from '@/lib/urdfScene';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Maximize2, Spline, ShieldAlert, Radio } from 'lucide-react';
+import * as THREE from 'three';
+import { RobotTwin } from '@/components/RobotTwin';
 import { useRobotStore } from '@/store/robotStore';
 import { useURDFStore } from '@/store/urdfStore';
 import { useRecordingStore } from '@/store/recordingStore';
+import { useConnectionStore } from '@/store/connectionStore';
 import { sampleTrajectory } from '@/lib/trajectory';
-import { Maximize2, RotateCcw, Spline } from 'lucide-react';
+import { rosClientRef } from '@/lib/rosRef';
+import type { Pose, SafetyReport } from '@/types';
 
 /** Cap FK samples so a long recording cannot stall the UI thread. */
 const MAX_PATH_POINTS = 300;
 
 export function RobotViewer() {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const sceneRef = useRef<SceneHandles | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
   const [showPath, setShowPath] = useState(true);
   const [pathStats, setPathStats] = useState<{ points: number; length: number } | null>(null);
-  const { jointState } = useRobotStore();
-  const { blobUrl } = useURDFStore();
+  const [safety, setSafety] = useState<SafetyReport | null>(null);
+
+  const { blobUrl, joints } = useURDFStore();
+  const eStop = useRobotStore((s) => s.eStop);
+  const addLog = useRobotStore((s) => s.addLog);
+  const useSimulation = useConnectionStore((s) => s.useSimulation);
 
   const library = useRecordingStore((s) => s.library);
   const selectedId = useRecordingStore((s) => s.selectedId);
@@ -28,69 +32,21 @@ export function RobotViewer() {
     [library, selectedId]
   );
 
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container || !blobUrl) return;
+  const handlesRef = useRef<{ computeEndEffectorPath: (s: number[][], n: string[]) => THREE.Vector3[] } | null>(
+    null
+  );
+  const [ready, setReady] = useState(false);
 
-    let mounted = true;
-    setLoaded(false);
-    setError(null);
-
-    createURDFScene(container, blobUrl)
-      .then((handles) => {
-        if (!mounted) {
-          handles.dispose();
-          return;
-        }
-        sceneRef.current = handles;
-        setLoaded(true);
-        setError(null);
-
-        const resizeObserver = new ResizeObserver(() => handles.resize());
-        resizeObserver.observe(container);
-
-        return () => {
-          resizeObserver.disconnect();
-          handles.dispose();
-        };
-      })
-      .catch((err) => {
-        console.warn('[RobotViewer] URDF load failed, using fallback scene:', err);
-        if (!mounted) return;
-        const fallback = createFallbackScene(container);
-        sceneRef.current = fallback;
-        setLoaded(true);
-        setError('URDF unavailable; fallback model in use');
-
-        const resizeObserver = new ResizeObserver(() => fallback.resize());
-        resizeObserver.observe(container);
-
-        return () => {
-          resizeObserver.disconnect();
-          fallback.dispose();
-        };
-      });
-
-    return () => {
-      mounted = false;
-      sceneRef.current?.dispose();
-      sceneRef.current = null;
-    };
-  }, [blobUrl]);
-
-  useEffect(() => {
-    if (sceneRef.current && jointState.name.length > 0) {
-      sceneRef.current.applyJointState(jointState);
-    }
-  }, [jointState]);
+  const [trajectoryPath, setTrajectoryPath] = useState<THREE.Vector3[] | null>(null);
+  const [playheadPoint, setPlayheadPoint] = useState<THREE.Vector3 | null>(null);
 
   /** Rebuild the end-effector polyline whenever the selection or model changes. */
   useEffect(() => {
-    const scene = sceneRef.current;
-    if (!scene) return;
+    const compute = handlesRef.current;
+    if (!compute) return;
 
     if (!showPath || !selected || selected.frames.length < 2) {
-      scene.setTrajectoryPath(null);
+      setTrajectoryPath(null);
       setPathStats(null);
       return;
     }
@@ -100,36 +56,66 @@ export function RobotViewer() {
       .filter((_, index) => index % stride === 0 || index === selected.frames.length - 1)
       .map((frame) => frame.position);
 
-    const points = scene.computeEndEffectorPath(samples, selected.jointNames);
-    scene.setTrajectoryPath(points);
+    const points = compute.computeEndEffectorPath(samples, selected.jointNames);
+    setTrajectoryPath(points);
 
     let length = 0;
     for (let i = 1; i < points.length; i++) length += points[i].distanceTo(points[i - 1]);
     setPathStats({ points: points.length, length });
-  }, [selected, showPath, loaded]);
+  }, [selected, showPath, ready]);
 
   /** Park a marker at the playhead so scrubbing maps to a pose in the scene. */
   useEffect(() => {
-    const scene = sceneRef.current;
-    if (!scene) return;
+    const compute = handlesRef.current;
+    if (!compute) return;
 
     if (!showPath || !selected) {
-      scene.setPathPlayhead(null);
+      setPlayheadPoint(null);
       return;
     }
 
     const positions = sampleTrajectory(selected, playheadMs);
-    const [point] = scene.computeEndEffectorPath([positions], selected.jointNames);
-    scene.setPathPlayhead(point ?? null);
-  }, [selected, showPath, playheadMs, loaded]);
+    const [point] = compute.computeEndEffectorPath([positions], selected.jointNames);
+    setPlayheadPoint(point ?? null);
+  }, [selected, showPath, playheadMs, ready]);
 
-  const handleResetCamera = () => {
-    if (sceneRef.current) {
-      sceneRef.current.camera.position.set(1.5, 1.2, 2);
-      sceneRef.current.controls.target.set(0, 0.5, 0);
-      sceneRef.current.controls.update();
-    }
-  };
+  /** Dragging the TCP gizmo publishes a Cartesian target for the IK solver. */
+  const handlePoseChange = useCallback(
+    (pose: Pose, phase: 'drag' | 'end') => {
+      if (eStop) return;
+
+      if (!useSimulation) {
+        try {
+          rosClientRef.current?.publishPoseStamped(pose);
+        } catch {
+          // Bridge down: the twin still previews the target, so stay quiet.
+        }
+      }
+
+      if (phase === 'end') {
+        const { x, y, z } = pose.position;
+        addLog(
+          `IK target → (${x.toFixed(3)}, ${y.toFixed(3)}, ${z.toFixed(3)})${
+            useSimulation ? ' [sim]' : ' → /ik_target'
+          }`
+        );
+      }
+    },
+    [eStop, useSimulation, addLog]
+  );
+
+  const handleSafety = useCallback((report: SafetyReport) => {
+    setSafety(report);
+  }, []);
+
+  const violations = safety
+    ? safety.joints.filter((j) => j.level === 'violation').length +
+      safety.proximity.filter((p) => p.level === 'violation').length
+    : 0;
+  const warnings = safety
+    ? safety.joints.filter((j) => j.level === 'warn').length +
+      safety.proximity.filter((p) => p.level === 'warn').length
+    : 0;
 
   return (
     <div className="panel flex flex-1 flex-col min-h-[320px]">
@@ -152,30 +138,62 @@ export function RobotViewer() {
           轨迹
         </button>
       </div>
+
       <div className="relative flex-1 overflow-hidden rounded-lg border border-slate-800 bg-slate-950">
-        <div ref={containerRef} className="absolute inset-0" />
-        {!loaded && (
-          <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-500">
-            Loading robot model...
-          </div>
-        )}
+        <RobotTwin
+          urdfUrl={blobUrl}
+          joints={joints}
+          trajectoryPath={trajectoryPath}
+          playhead={playheadPoint}
+          onPoseChange={handlePoseChange}
+          onSafety={handleSafety}
+          className="absolute inset-0"
+          onReady={(handles) => {
+            handlesRef.current = handles;
+            setReady(true);
+          }}
+        />
+
         {showPath && pathStats && (
-          <div className="absolute left-2 top-2 rounded bg-slate-900/80 px-2 py-1 text-[10px] text-cyan-300 ring-1 ring-cyan-500/30">
+          <div className="pointer-events-none absolute left-2 top-2 rounded bg-slate-900/80 px-2 py-1 text-[10px] text-cyan-300 ring-1 ring-cyan-500/30">
             末端路径 {pathStats.points} 点 · 长度 {(pathStats.length * 1000).toFixed(0)} mm
           </div>
         )}
-        {error && (
-          <div className="absolute bottom-2 left-2 rounded bg-amber-500/10 px-2 py-1 text-xs text-amber-400 ring-1 ring-amber-500/30">
-            {error}
+
+        {(violations > 0 || warnings > 0) && (
+          <div
+            className={`pointer-events-none absolute right-2 top-2 flex items-center gap-1.5 rounded px-2 py-1 text-[10px] ring-1 ${
+              violations > 0
+                ? 'bg-red-500/15 text-red-300 ring-red-500/40'
+                : 'bg-amber-500/15 text-amber-300 ring-amber-500/40'
+            }`}
+            title={safety
+              ? [
+                  ...safety.joints.map((j) => `${j.joint} ${j.value.toFixed(2)} ∉ [${j.lower.toFixed(2)}, ${j.upper.toFixed(2)}]`),
+                  ...safety.proximity.map((p) => `${p.a} ↔ ${p.b} 间距 ${(p.distance * 1000).toFixed(0)} mm`),
+                ].join('\n')
+              : undefined}
+          >
+            <ShieldAlert className="h-3 w-3" />
+            {violations > 0 ? `${violations} 处越限 / 碰撞` : `${warnings} 处接近限界`}
           </div>
         )}
-        <button
-          onClick={handleResetCamera}
-          className="btn btn-secondary absolute bottom-2 right-2 p-2"
-          title="Reset camera"
-        >
-          <RotateCcw className="h-4 w-4" />
-        </button>
+
+        {eStop && (
+          <div className="pointer-events-none absolute inset-x-0 top-1/2 flex -translate-y-1/2 justify-center">
+            <span className="rounded bg-red-600/90 px-3 py-1 text-xs font-black uppercase tracking-widest text-white">
+              Motion Locked
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-2 flex items-center gap-3 text-[10px] text-slate-500">
+        <span className="flex items-center gap-1">
+          <Radio className="h-3 w-3" />
+          /joint_states → 环形缓冲 + 帧内插值
+        </span>
+        <span>点击末端小球召唤 Gizmo</span>
       </div>
     </div>
   );

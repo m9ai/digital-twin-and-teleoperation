@@ -4,11 +4,12 @@ import { useConnectionStore } from '@/store/connectionStore';
 import { useRobotStore } from '@/store/robotStore';
 import { useGamepad } from '@/hooks/useGamepad';
 import { rosClientRef } from '@/lib/rosRef';
+import { releaseEmergencyStop, triggerEmergencyStop } from '@/lib/emergencyStop';
 import type { Twist } from '@/types';
 
 export function ControlDesk() {
   const { status, useSimulation, setUrl, setUseSimulation } = useConnectionStore();
-  const { eStop, toggleEStop, addLog } = useRobotStore();
+  const { eStop, addLog } = useRobotStore();
   const [urlInput, setUrlInput] = useState(status.url);
   const axesRef = useGamepad();
 
@@ -37,36 +38,44 @@ export function ControlDesk() {
         <span>Control Desk</span>
       </div>
 
-      <div className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-800/40 p-3">
-        <div className="text-sm text-slate-300">Mode</div>
-        <div className="flex items-center gap-2">
+      <div className="rounded-lg border border-slate-700 bg-slate-800/40 p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-sm text-slate-300">数据源</span>
+          <span className="text-[10px] text-slate-500">
+            {useSimulation ? '内置 Mock 生成器 · 100 Hz' : 'rosbridge WebSocket'}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() => {
               setUseSimulation(true);
-              addLog('Switched to simulation mode');
+              addLog('切换到 Demo / Mock 模式（本地生成关节数据）');
             }}
-            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
               useSimulation
                 ? 'bg-cyan-600 text-white'
                 : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
             }`}
           >
-            Simulation
+            Demo / Mock
           </button>
           <button
             onClick={() => {
               setUseSimulation(false);
-              addLog('Switched to live ROS mode');
+              addLog('切换到真实 ROS 2 节点');
             }}
-            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
               !useSimulation
                 ? 'bg-cyan-600 text-white'
                 : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
             }`}
           >
-            Live ROS
+            真实 ROS 2 节点
           </button>
         </div>
+        <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
+          Demo 模式无需任何 ROS 2 环境，自动按 URDF 限界生成连续关节运动，可直接用于演示与录屏。
+        </p>
       </div>
 
       <div className="flex items-center gap-2">
@@ -124,8 +133,9 @@ export function ControlDesk() {
 
       <div className="grid grid-cols-2 gap-3">
         <button
-          onClick={toggleEStop}
+          onClick={() => (eStop ? releaseEmergencyStop() : triggerEmergencyStop('button'))}
           className={`btn flex-1 ${eStop ? 'btn-primary' : 'btn-danger'}`}
+          title="快捷键：Space"
         >
           {eStop ? <Power className="h-4 w-4" /> : <ZapOff className="h-4 w-4" />}
           {eStop ? 'Release E-Stop' : 'Trigger E-Stop'}

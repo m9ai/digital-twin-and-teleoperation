@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { BrandLogo } from './BrandLogo';
+import { EStopControl } from './EStopControl';
 
 interface LayoutProps {
   children: ReactNode;
@@ -15,8 +16,11 @@ export function Layout({ children }: LayoutProps) {
             ROS 2 Digital Twin & Teleoperation
           </h1>
         </div>
-        <div className="text-xs font-medium text-slate-500">
-          Embodied AI Platform
+        <div className="flex items-center gap-4">
+          <div className="hidden text-xs font-medium text-slate-500 sm:block">
+            Embodied AI Platform
+          </div>
+          <EStopControl />
         </div>
       </header>
       <main className="flex-1 overflow-hidden">{children}</main>
