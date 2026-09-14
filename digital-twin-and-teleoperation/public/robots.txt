@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+
+# Single-page app: there is no private or duplicated content to hide.
+# Update the host before deploying (see README > SEO).
+Sitemap: https://embodied-ai-platform.vercel.app/sitemap.xml

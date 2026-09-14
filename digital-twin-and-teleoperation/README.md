@@ -74,7 +74,13 @@ src/
   lib/            # ROS 客户端、URDF 场景、URDF 关节解析、全局引用
   store/          # Zustand 状态（机器人、连接、URDF）
   types/          # TypeScript 类型
-public/assets/    # URDF / Mesh 资源
+public/
+  assets/         # URDF / Mesh 资源
+  icons/          # 矢量应用图标（any / maskable）
+  screenshots/    # manifest 截图与 og:image
+  favicon.svg     # 矢量 favicon
+  robots.txt
+  sitemap.xml
 ```
 
 ## 关节 Jog 说明
@@ -155,3 +161,49 @@ ros2 topic echo /joint_command
 - WebHID / HTML5 Gamepad API 遥控输入
 - `/cmd_vel` Twist 指令下发
 - 100ms 心跳 + 急停（E-Stop）安全保护
+- PWA：可安装为桌面应用，应用外壳离线可用，新版本提示后手动更新
+- SEO：完整 meta / Open Graph / JSON-LD、`robots.txt`、`sitemap.xml`，纯矢量图标
+
+## 部署（Vercel）
+
+`vercel.json` 声明构建与输出目录，仓库根的 `.github/workflows/deploy-vercel.yml` 负责 CI：main 推送走生产部署，PR 走预览部署（单页应用 + PWA 需要真实域名验证，故保留 CI 部署而非仅靠 Git 集成）。
+
+1. Vercel 导入仓库，Root Directory 设为 `digital-twin-and-teleoperation`。
+2. `vercel link` 后把 `.vercel/project.json` 里的 `orgId` / `projectId` 与账号 token 填入仓库 Secrets：`VERCEL_ORG_ID`、`VERCEL_PROJECT_ID`、`VERCEL_TOKEN`。
+3. 可选：仓库 Variables 加 `VITE_SITE_URL` 覆盖默认域名（优先级高于 `.env`）。
+4. 推送到 `main` 即自动部署。
+
+`sw.js` 设为 `max-age=0, must-revalidate`，确保新版本能被立即发现；`assets/` 带 hash 故可长缓存。
+
+## PWA（可安装 / 离线）
+
+由 `vite-plugin-pwa`（Workbox `generateSW`）提供，构建时产出 `dist/manifest.webmanifest` 与 `dist/sw.js`。
+
+| 策略 | 选择 | 原因 |
+|---|---|---|
+| 更新方式 | `registerType: 'prompt'` | **遥操作会话中绝不能自动 reload**。新构建只通过右下角提示条告知，由操作者确认后更新 |
+| 预缓存 | 仅应用外壳（`js/css/html/svg/woff2`，约 2MB） | Three.js / ECharts 版本稳定，值得缓存；URDF 与 mesh 由用户提供且体积大，刻意排除 |
+| 导航请求 | 不进入运行时缓存 | 避免旧 `index.html` 遮挡刚部署的新版本 |
+| Monaco CDN | `CacheFirst`，30 天 | 默认从 jsdelivr 加载，缓存后 URDF 编辑器离线可用 |
+| 跨源 URDF / mesh | 不缓存 | 用户远程模型可能随时变化，不做过期猜测 |
+
+- **图标**：`public/favicon.svg`、`public/icons/icon.svg`（purpose `any`）、`public/icons/icon-maskable.svg`（purpose `maskable`，图形收缩到 80% 安全区）——全部为矢量，无位图。
+- **界面 logo**：`src/components/BrandLogo.tsx` 复用同一套几何（`currentColor` + 橙色关节），已用于顶栏。
+- **状态提示**：`src/components/PWABadge.tsx` 负责「新版本可用」「安装为桌面应用」「离线已就绪」。
+- **本地验证**：`npm run build && npm run preview`，浏览器地址栏出现安装按钮即生效。Service Worker 只在 `https://` 或 `localhost` 下工作，局域网 IP 访问时不会注册。
+- 已知限制：iOS Safari 的 `apple-touch-icon` 只接受位图，当前指向 SVG，添加到主屏时 iOS 会回退为页面截图；如需完美效果，可额外导出 PNG 并改回 `index.html` 中的该标签。
+
+## SEO
+
+- `index.html`：`title` / `description` / `keywords` / `canonical` / `robots`、Open Graph、Twitter Card、`WebApplication` JSON-LD（含 `featureList`）、`noscript` 兜底，以及 `theme-color`、`apple-mobile-web-app-*` 等安装元数据。
+- `public/robots.txt`、`public/sitemap.xml`：单页应用只有 `/` 一个 URL。
+- 站点域名通过 `.env` 的 `VITE_SITE_URL` 注入（构建时替换 `%VITE_SITE_URL%`）。
+
+绑定自定义域名时替换三处（`VITE_SITE_URL`、`<loc>`、Sitemap 行），保持一致：
+
+```bash
+sed -i '' 's#embodied-ai-platform.vercel.app#your-domain.com#g' \
+  .env public/sitemap.xml public/robots.txt
+```
+
+`og:image` / `manifest.screenshots` 复用 `public/screenshots/` 下的界面截图（1280×720，由 `editor-mode.png`、`editor-test.png` 复制而来）；社交平台不支持 SVG 预览图，故此处保留 PNG。

@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="ROS 2 Digital Twin and Teleoperation">
+  <title>ROS 2 Digital Twin &amp; Teleoperation</title>
+  <defs>
+    <linearGradient id="limb-maskable" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#0ea5e9" />
+      <stop offset="1" stop-color="#22d3ee" />
+    </linearGradient>
+  </defs>
+
+  <!-- Full-bleed background: maskable icons may be cropped to any shape. -->
+  <rect width="512" height="512" fill="#0b1220" />
+
+  <!-- Content shrunk into the 80% safe zone (OS masks can crop up to 10% per side). -->
+  <g transform="translate(256 256) scale(0.74) translate(-256 -256)">
+    <g fill="none" stroke="#22d3ee" stroke-width="12" stroke-linecap="round">
+      <path d="M392 74a36 36 0 0 1 36 36" opacity="0.75" />
+      <path d="M392 52a58 58 0 0 1 58 58" opacity="0.5" />
+      <path d="M392 30a80 80 0 0 1 80 80" opacity="0.28" />
+    </g>
+
+    <rect x="176" y="404" width="160" height="30" rx="12" fill="#0f2b36" stroke="url(#limb-maskable)" stroke-width="10" />
+    <path d="M236 404v-32M276 404v-32" stroke="#22d3ee" stroke-width="10" stroke-linecap="round" opacity="0.85" />
+
+    <g stroke="url(#limb-maskable)" stroke-linecap="round" fill="none">
+      <path d="M256 376 168 236" stroke-width="32" />
+      <path d="M168 236 300 180" stroke-width="26" />
+      <path d="M300 180l64-32" stroke-width="18" />
+    </g>
+
+    <g stroke="#22d3ee" stroke-width="12" stroke-linecap="round" fill="none">
+      <path d="M364 148 392 120" />
+      <path d="M364 148 398 168" />
+    </g>
+
+    <g fill="#0b1220" stroke="#22d3ee" stroke-width="12">
+      <circle cx="256" cy="376" r="24" />
+      <circle cx="168" cy="236" r="22" />
+      <circle cx="300" cy="180" r="20" />
+    </g>
+    <g fill="#f97316">
+      <circle cx="256" cy="376" r="9" />
+      <circle cx="168" cy="236" r="8" />
+      <circle cx="300" cy="180" r="7" />
+    </g>
+    <circle cx="392" cy="120" r="10" fill="#22d3ee" />
+  </g>
+</svg>

@@ -7,6 +7,7 @@ import { PointCloud } from './components/PointCloud';
 import { JointJogPanel } from './components/JointJogPanel';
 import { TrajectoryPanel } from './components/TrajectoryPanel';
 import { ConnectionBar } from './components/ConnectionBar';
+import { PWABadge } from './components/PWABadge';
 import { URDFUploadPanel } from './components/URDFUploadPanel';
 import { useROS } from './hooks/useROS';
 import { useHeartbeat } from './hooks/useHeartbeat';
@@ -30,6 +31,7 @@ function App() {
 
   return (
     <Layout>
+      <PWABadge />
       <div className="flex flex-col h-full gap-4 p-4">
         <ConnectionBar />
 

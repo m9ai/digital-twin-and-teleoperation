@@ -2,11 +2,102 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ROS 2 Digital Twin & Teleoperation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+
+    <title>ROS 2 Digital Twin &amp; Teleoperation | Browser Robot Telemetry &amp; Control</title>
+    <meta
+      name="description"
+      content="Browser-based ROS 2 digital twin and teleoperation workspace. Live /joint_states telemetry, URDF viewer and editor, joint jogging, motion recording and playback, low-latency WebRTC / WHEP video, 3D point clouds and E-Stop safety — no local desktop ROS install required."
+    />
+    <meta
+      name="keywords"
+      content="ROS 2, rosbridge, digital twin, robot teleoperation, URDF viewer, joint states, WebRTC, WHEP, MediaMTX, Three.js, point cloud, motion recording, joint trajectory, gamepad teleop, embodied AI"
+    />
+    <meta name="author" content="Embodied AI Platform" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+    <link rel="canonical" href="%VITE_SITE_URL%/" />
+
+    <!-- PWA / installed-app metadata -->
+    <meta name="application-name" content="ROS 2 Twin" />
+    <meta name="theme-color" content="#0b1220" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="ROS 2 Twin" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <!-- Icons: vector only (see public/icons) -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/icons/icon.svg" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="ROS 2 Digital Twin &amp; Teleoperation" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:url" content="%VITE_SITE_URL%/" />
+    <meta property="og:title" content="ROS 2 Digital Twin &amp; Teleoperation | Browser Robot Telemetry &amp; Control" />
+    <meta
+      property="og:description"
+      content="Digital twin and teleoperation for ROS 2 robots, entirely in the browser: URDF viewer/editor, live joint telemetry, jog teaching, motion record and playback, WebRTC / WHEP video and E-Stop safety."
+    />
+    <meta property="og:image" content="%VITE_SITE_URL%/screenshots/desktop.png" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="720" />
+    <meta property="og:image:alt" content="Digital twin workspace with URDF robot view, telemetry charts and jog controls" />
+
+    <!-- Twitter / X -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="ROS 2 Digital Twin &amp; Teleoperation" />
+    <meta
+      name="twitter:description"
+      content="Browser-based ROS 2 digital twin, teleoperation and motion recording — WebRTC video, URDF editing and live telemetry without a local desktop ROS install."
+    />
+    <meta name="twitter:image" content="%VITE_SITE_URL%/screenshots/desktop.png" />
+    <meta name="twitter:image:alt" content="ROS 2 digital twin workspace running in the browser" />
+
+    <!-- Monaco Editor is loaded from a CDN by default; warmed up for faster first paint. -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "ROS 2 Digital Twin & Teleoperation",
+        "url": "%VITE_SITE_URL%/",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Any modern browser (Chrome, Edge, Firefox, Safari)",
+        "browserRequirements": "Requires WebGL, WebSocket and WebRTC support",
+        "description": "Browser-based ROS 2 digital twin and teleoperation workspace with URDF viewing and editing, live joint telemetry, jog teaching, motion recording and playback, low-latency WebRTC/WHEP video, 3D point clouds and E-Stop safety.",
+        "image": "%VITE_SITE_URL%/screenshots/desktop.png",
+        "screenshot": "%VITE_SITE_URL%/screenshots/desktop.png",
+        "keywords": "ROS 2, rosbridge, digital twin, teleoperation, URDF, WebRTC, WHEP, joint trajectory, embodied AI",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "featureList": [
+          "URDF loading, validation and in-browser editing with 3D preview",
+          "Live /joint_states telemetry over rosbridge WebSocket",
+          "Joint jog teaching in simulation and on real hardware",
+          "Motion recording, editing, visualization and interpolated playback",
+          "Low-latency WebRTC video via custom WebSocket signaling or WHEP",
+          "Three.js point cloud rendering",
+          "Gamepad / WebHID teleoperation and /cmd_vel publishing",
+          "Heartbeat monitoring and E-Stop safety interlock",
+          "Installable progressive web app with offline app shell"
+        ]
+      }
+    </script>
   </head>
   <body class="bg-slate-950 text-slate-100">
     <div id="root"></div>
+    <noscript>
+      <div style="padding: 24px; font-family: system-ui, sans-serif; color: #e2e8f0; background: #0b1220">
+        <h1>ROS 2 Digital Twin &amp; Teleoperation</h1>
+        <p>
+          This workspace is a real-time web application: it needs JavaScript enabled to stream
+          joint telemetry, render the URDF digital twin and drive the robot.
+        </p>
+      </div>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="ROS 2 Digital Twin and Teleoperation">
+  <title>ROS 2 Digital Twin &amp; Teleoperation</title>
+  <rect width="64" height="64" rx="14" fill="#0b1220" />
+  <g stroke="#22d3ee" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M20 52h24" stroke-width="7" />
+    <path d="M32 48V38" stroke-width="7" />
+    <path d="M32 38 22 25" stroke-width="7" />
+    <path d="M22 25 41 19" stroke-width="6" />
+    <path d="M41 19 48 12" stroke-width="5" />
+  </g>
+  <circle cx="32" cy="38" r="3.6" fill="#f97316" />
+  <circle cx="22" cy="25" r="3.2" fill="#f97316" />
+  <circle cx="49" cy="11" r="3.4" fill="#22d3ee" />
+  <g stroke="#22d3ee" fill="none" stroke-width="3" stroke-linecap="round" opacity="0.55">
+    <path d="M53 17a9 9 0 0 1 4 7" />
+  </g>
+</svg>
