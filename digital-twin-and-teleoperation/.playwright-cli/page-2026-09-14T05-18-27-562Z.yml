@@ -1,0 +1,139 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e6]
+      - heading "ROS 2 Digital Twin & Teleoperation" [level=1] [ref=e8]
+    - generic [ref=e9]: Embodied AI Platform
+  - main [ref=e10]:
+    - generic [ref=e11]:
+      - generic [ref=e12]:
+        - generic [ref=e13]:
+          - generic [ref=e14]:
+            - img [ref=e15]
+            - generic [ref=e19]: Connected
+          - generic [ref=e20]:
+            - img [ref=e21]
+            - generic [ref=e24]: 12 ms
+          - generic [ref=e25]: ws://localhost:9090
+        - generic [ref=e27]: READY
+      - generic [ref=e28]:
+        - generic [ref=e29]:
+          - generic [ref=e30]:
+            - generic [ref=e31]:
+              - img [ref=e32]
+              - generic [ref=e37]: Digital Twin (URDF / Three.js)
+            - generic [ref=e38]:
+              - generic [ref=e41]: Loading robot model...
+              - button "Reset camera" [ref=e42] [cursor=pointer]:
+                - img [ref=e43]
+          - generic [ref=e46]:
+            - generic [ref=e47]:
+              - img [ref=e48]
+              - generic [ref=e50]: LiDAR Point Cloud
+            - button "Pause animation" [ref=e54] [cursor=pointer]:
+              - img [ref=e55]
+        - generic [ref=e58]:
+          - generic [ref=e59]:
+            - generic [ref=e60]:
+              - generic [ref=e61]:
+                - img [ref=e62]
+                - generic [ref=e65]: URDF 模型
+              - generic [ref=e66]:
+                - button "上传" [ref=e67] [cursor=pointer]:
+                  - img [ref=e68]
+                  - text: 上传
+                - button "编辑" [ref=e71] [cursor=pointer]:
+                  - img [ref=e72]
+                  - text: 编辑
+            - generic [ref=e74] [cursor=pointer]:
+              - img [ref=e75]
+              - generic [ref=e78]: 上传 URDF
+              - generic [ref=e79]: .urdf / .xacro
+            - generic [ref=e80] [cursor=pointer]:
+              - img [ref=e81]
+              - generic [ref=e84]: 上传 Mesh 资源
+              - generic [ref=e85]: STL / DAE / OBJ，可多次追加
+            - generic [ref=e86] [cursor=pointer]:
+              - img [ref=e87]
+              - generic [ref=e91]: 上传 ZIP 包
+              - generic [ref=e92]: 包含 URDF + meshes 的压缩包
+          - generic [ref=e93]:
+            - generic [ref=e94]:
+              - img [ref=e95]
+              - generic [ref=e98]: WebRTC Video Stream
+            - generic [ref=e102]: Stream idle
+            - generic [ref=e106]:
+              - textbox "wss://robot-ip:8443/ws" [ref=e107]
+              - button "Start" [disabled] [ref=e108]:
+                - img [ref=e109]
+                - text: Start
+          - generic [ref=e111]:
+            - generic [ref=e112]:
+              - img [ref=e113]
+              - generic [ref=e115]: Telemetry
+            - generic [ref=e116]:
+              - generic [ref=e117]:
+                - generic [ref=e118]:
+                  - img [ref=e119]
+                  - generic [ref=e121]: Battery
+                - generic [ref=e122]: 84.0%
+                - generic [ref=e123]: 24.2 V
+              - generic [ref=e124]:
+                - generic [ref=e125]:
+                  - img [ref=e126]
+                  - generic [ref=e129]: Velocity
+                - generic [ref=e130]: 0.00 m/s
+                - generic [ref=e131]: 0.00 rad/s
+              - generic [ref=e132]:
+                - generic [ref=e133]:
+                  - img [ref=e134]
+                  - generic [ref=e136]: CPU Temp
+                - generic [ref=e137]: 42.0°C
+              - generic [ref=e138]:
+                - generic [ref=e139]:
+                  - img [ref=e140]
+                  - generic [ref=e142]: Joints
+                - generic [ref=e143]: "0"
+            - generic [ref=e144]:
+              - generic [ref=e146]: Battery Level
+              - generic [ref=e151]: Velocity
+              - generic [ref=e156]: CPU Temperature
+          - generic [ref=e160]:
+            - generic [ref=e161]:
+              - img [ref=e162]
+              - generic [ref=e164]: Control Desk
+            - generic [ref=e165]:
+              - generic [ref=e166]: Mode
+              - generic [ref=e167]:
+                - button "Simulation" [ref=e168] [cursor=pointer]
+                - button "Live ROS" [ref=e169] [cursor=pointer]
+            - generic [ref=e170]:
+              - img [ref=e171]
+              - textbox "ws://localhost:9090" [ref=e177]
+              - button "Set" [ref=e178] [cursor=pointer]
+            - generic [ref=e179]:
+              - generic [ref=e180]:
+                - generic [ref=e181]: Gamepad Input
+                - generic [ref=e182]: Deadzone applied
+              - generic [ref=e183]:
+                - generic [ref=e185]:
+                  - generic [ref=e186]: Linear X
+                  - generic [ref=e187]: "0.00"
+                - generic [ref=e190]:
+                  - generic [ref=e191]: Angular Z
+                  - generic [ref=e192]: "0.00"
+            - generic [ref=e194]:
+              - button "Trigger E-Stop" [ref=e195] [cursor=pointer]:
+                - img [ref=e196]
+                - text: Trigger E-Stop
+              - button "Zero Velocity" [ref=e201] [cursor=pointer]
+            - generic [ref=e202]:
+              - generic [ref=e203]:
+                - img [ref=e204]
+                - generic [ref=e207]: System Log
+              - generic [ref=e208]:
+                - generic [ref=e209]: Simulation mode active
+                - generic [ref=e210]: Disconnected from ROS bridge
+                - generic [ref=e211]: Disconnected from ROS bridge
+                - generic [ref=e212]: Simulation mode active
+                - generic [ref=e213]: Disconnected from ROS bridge

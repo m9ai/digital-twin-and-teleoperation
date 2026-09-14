@@ -8,14 +8,18 @@ import {
   CheckCircle2,
   Package,
   X,
+  Edit3,
+  UploadCloud,
 } from 'lucide-react';
 import { useURDFStore } from '@/store/urdfStore';
 import { parseURDFZip } from '@/lib/urdfZipParser';
+import { URDFEditor } from '@/components/URDFEditor';
 
 export function URDFUploadPanel() {
   const urdfInputRef = useRef<HTMLInputElement>(null);
   const meshInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
+  const [mode, setMode] = useState<'upload' | 'edit'>('upload');
   const [dragTarget, setDragTarget] = useState<'urdf' | 'mesh' | 'zip' | null>(null);
 
   const {
@@ -164,11 +168,43 @@ export function URDFUploadPanel() {
 
   return (
     <div className="panel flex flex-col gap-3">
-      <div className="panel-title">
-        <FileText className="h-4 w-4" />
-        <span>URDF 模型</span>
+      <div className="panel-title justify-between">
+        <div className="flex items-center gap-2">
+          <FileText className="h-4 w-4" />
+          <span>URDF 模型</span>
+        </div>
+        <div className="flex rounded-md bg-slate-800 p-0.5">
+          <button
+            onClick={() => setMode('upload')}
+            className={`flex items-center gap-1 rounded px-2 py-0.5 text-xs transition-colors ${
+              mode === 'upload' ? 'bg-slate-600 text-slate-100' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <UploadCloud className="h-3 w-3" />
+            上传
+          </button>
+          <button
+            onClick={() => setMode('edit')}
+            className={`flex items-center gap-1 rounded px-2 py-0.5 text-xs transition-colors ${
+              mode === 'edit' ? 'bg-slate-600 text-slate-100' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Edit3 className="h-3 w-3" />
+            编辑
+          </button>
+        </div>
       </div>
 
+      {mode === 'edit' && (
+        fileName ? <URDFEditor /> : (
+          <div className="rounded-lg border border-dashed border-slate-700 bg-slate-800/40 p-4 text-center text-xs text-slate-500">
+            请先上传 URDF 文件，或切换到「上传」模式加载默认模型。
+          </div>
+        )
+      )}
+
+      {mode === 'upload' && (
+      <>
       {/* URDF upload */}
       <div
         onClick={() => urdfInputRef.current?.click()}
@@ -246,6 +282,8 @@ export function URDFUploadPanel() {
           className="hidden"
         />
       </div>
+      </>
+      )}
 
       {fileName && (
         <div className="flex items-center justify-between rounded-lg bg-slate-800/60 px-3 py-2 text-xs">
@@ -254,7 +292,10 @@ export function URDFUploadPanel() {
             <span className="truncate">{fileName}</span>
           </div>
           <button
-            onClick={reset}
+            onClick={() => {
+              reset();
+              setMode('upload');
+            }}
             className="flex items-center gap-1 rounded p-1 text-slate-500 hover:bg-slate-700 hover:text-slate-300"
             title="恢复默认 URDF"
           >
