@@ -195,13 +195,7 @@ export function URDFUploadPanel() {
         </div>
       </div>
 
-      {mode === 'edit' && (
-        fileName ? <URDFEditor /> : (
-          <div className="rounded-lg border border-dashed border-slate-700 bg-slate-800/40 p-4 text-center text-xs text-slate-500">
-            请先上传 URDF 文件，或切换到「上传」模式加载默认模型。
-          </div>
-        )
-      )}
+      {mode === 'edit' && <URDFEditor />}
 
       {mode === 'upload' && (
       <>

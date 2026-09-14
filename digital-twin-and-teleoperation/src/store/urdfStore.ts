@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { resolveMeshReferences } from '@/lib/urdfMeshResolver';
+import { parseJointDefinitions } from '@/lib/urdfJoints';
 import type { MeshReference } from '@/lib/urdfMeshResolver';
+import type { URDFJointDefinition } from '@/lib/urdfJoints';
 
 export interface URDFState {
   fileName: string | null;
@@ -13,11 +15,14 @@ export interface URDFState {
   resolvedMeshes: MeshReference[];
   missingMeshes: MeshReference[];
   unresolvedReplaced: number;
+  joints: URDFJointDefinition[];
   setURDF: (fileName: string, text: string, initialMeshFiles?: File[]) => void;
   addMeshFiles: (files: File[]) => void;
   removeMeshFile: (name: string) => void;
   setError: (error: string | null) => void;
   setLoading: (loading: boolean) => void;
+  /** Fetch the bundled demo URDF so its joints become editable / jogglable. */
+  loadDefault: () => Promise<void>;
   reset: () => void;
 }
 
@@ -51,10 +56,11 @@ function applyURDF(
     resolvedMeshes: resolved,
     missingMeshes: missing,
     unresolvedReplaced,
+    joints: parseJointDefinitions(text),
   };
 }
 
-export const useURDFStore = create<URDFState>((set) => ({
+export const useURDFStore = create<URDFState>((set, get) => ({
   fileName: null,
   urdfText: null,
   processedText: null,
@@ -65,6 +71,7 @@ export const useURDFStore = create<URDFState>((set) => ({
   resolvedMeshes: [],
   missingMeshes: [],
   unresolvedReplaced: 0,
+  joints: [],
   setURDF: (fileName, text, initialMeshFiles = []) =>
     set((prev) => applyURDF(prev, fileName, text, initialMeshFiles)),
   addMeshFiles: (files) =>
@@ -95,22 +102,36 @@ export const useURDFStore = create<URDFState>((set) => ({
     }),
   setError: (error) => set({ error }),
   setLoading: (loading) => set({ isLoading: loading }),
-  reset: () =>
-    set((prev) => {
-      if (prev.blobUrl && prev.blobUrl !== defaultURDFUrl) {
-        URL.revokeObjectURL(prev.blobUrl);
-      }
-      return {
-        fileName: null,
-        urdfText: null,
-        processedText: null,
-        blobUrl: defaultURDFUrl,
-        error: null,
-        isLoading: false,
-        meshFiles: [],
-        resolvedMeshes: [],
-        missingMeshes: [],
-        unresolvedReplaced: 0,
-      };
-    }),
+  loadDefault: async () => {
+    if (get().urdfText !== null) return;
+    set({ isLoading: true });
+    try {
+      const res = await fetch(defaultURDFUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      set((prev) => applyURDF(prev, 'industrial-5axis-arm.urdf', text, prev.meshFiles));
+    } catch {
+      set({ isLoading: false, error: '无法加载默认 URDF 资源' });
+    }
+  },
+  reset: () => {
+    const prev = get();
+    if (prev.blobUrl && prev.blobUrl !== defaultURDFUrl) {
+      URL.revokeObjectURL(prev.blobUrl);
+    }
+    set({
+      fileName: null,
+      urdfText: null,
+      processedText: null,
+      blobUrl: defaultURDFUrl,
+      error: null,
+      isLoading: false,
+      meshFiles: [],
+      resolvedMeshes: [],
+      missingMeshes: [],
+      unresolvedReplaced: 0,
+      joints: [],
+    });
+    void get().loadDefault();
+  },
 }));

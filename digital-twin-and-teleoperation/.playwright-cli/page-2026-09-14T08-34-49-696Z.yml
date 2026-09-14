@@ -1,0 +1,328 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e6]
+      - heading "ROS 2 Digital Twin & Teleoperation" [level=1] [ref=e8]
+    - generic [ref=e9]: Embodied AI Platform
+  - main [ref=e10]:
+    - generic [ref=e11]:
+      - generic [ref=e12]:
+        - generic [ref=e13]:
+          - generic [ref=e14]:
+            - img [ref=e15]
+            - generic [ref=e19]: Connected
+          - generic [ref=e20]:
+            - img [ref=e21]
+            - generic [ref=e24]: 12 ms
+          - generic [ref=e25]: ws://localhost:9090
+        - generic [ref=e27]: READY
+      - generic [ref=e28]:
+        - generic [ref=e29]:
+          - generic [ref=e30]:
+            - generic [ref=e31]:
+              - generic [ref=e32]:
+                - img [ref=e33]
+                - generic [ref=e38]: Digital Twin (URDF / Three.js)
+              - button "轨迹" [ref=e39] [cursor=pointer]:
+                - img [ref=e40]
+                - text: 轨迹
+            - generic [ref=e44]:
+              - generic [ref=e364]: 末端路径 217 点 · 长度 12124 mm
+              - button "Reset camera" [ref=e49] [cursor=pointer]:
+                - img [ref=e50]
+          - generic [ref=e53]:
+            - generic [ref=e54]:
+              - generic [ref=e55]:
+                - img [ref=e56]
+                - generic [ref=e58]: LiDAR Point Cloud
+              - button "Pause animation" [ref=e62] [cursor=pointer]:
+                - img [ref=e63]
+            - generic [ref=e66]:
+              - generic [ref=e67]:
+                - generic [ref=e68]:
+                  - img [ref=e69]
+                  - generic [ref=e74]: Joint Jog
+                - button "接管关节" [ref=e75] [cursor=pointer]
+              - generic [ref=e76]:
+                - generic [ref=e77]:
+                  - generic [ref=e78]:
+                    - generic [ref=e79]: joint1
+                    - generic [ref=e80]: "-0.037 rad"
+                  - slider [ref=e81] [cursor=pointer]: "-0.0313999999999996"
+                  - generic [ref=e82]:
+                    - generic [ref=e83]: "-3.14 rad"
+                    - generic [ref=e84]: revolute
+                    - generic [ref=e85]: 3.14 rad
+                - generic [ref=e86]:
+                  - generic [ref=e87]:
+                    - generic [ref=e88]: joint2
+                    - generic [ref=e89]: 0.484 rad
+                  - slider [ref=e90] [cursor=pointer]: "0.4867"
+                  - generic [ref=e91]:
+                    - generic [ref=e92]: "-1.57 rad"
+                    - generic [ref=e93]: revolute
+                    - generic [ref=e94]: 1.57 rad
+                - generic [ref=e95]:
+                  - generic [ref=e96]:
+                    - generic [ref=e97]: joint3
+                    - generic [ref=e98]: 0.560 rad
+                  - slider [ref=e99] [cursor=pointer]: "0.5652"
+                  - generic [ref=e100]:
+                    - generic [ref=e101]: "-1.57 rad"
+                    - generic [ref=e102]: revolute
+                    - generic [ref=e103]: 1.57 rad
+                - generic [ref=e104]:
+                  - generic [ref=e105]:
+                    - generic [ref=e106]: joint4
+                    - generic [ref=e107]: 0.122 rad
+                  - slider [ref=e108] [cursor=pointer]: "0.1256"
+                  - generic [ref=e109]:
+                    - generic [ref=e110]: "-3.14 rad"
+                    - generic [ref=e111]: revolute
+                    - generic [ref=e112]: 3.14 rad
+                - generic [ref=e113]:
+                  - generic [ref=e114]:
+                    - generic [ref=e115]: joint5
+                    - generic [ref=e116]: "-0.429 rad"
+                  - slider [ref=e117] [cursor=pointer]: "-0.4239"
+                  - generic [ref=e118]:
+                    - generic [ref=e119]: "-1.57 rad"
+                    - generic [ref=e120]: revolute
+                    - generic [ref=e121]: 1.57 rad
+                - generic [ref=e122]:
+                  - generic [ref=e123]:
+                    - generic [ref=e124]: finger_left_joint
+                    - generic [ref=e125]: "-0.585 m"
+                  - slider [ref=e126] [cursor=pointer]: "0"
+                  - generic [ref=e127]:
+                    - generic [ref=e128]: 0.00 m
+                    - generic [ref=e129]: prismatic
+                    - generic [ref=e130]: 0.03 m
+                - generic [ref=e131]:
+                  - generic [ref=e132]:
+                    - generic [ref=e133]: finger_right_joint
+                    - generic [ref=e134]: "-0.203 m"
+                  - slider [ref=e135] [cursor=pointer]: "0"
+                  - generic [ref=e136]:
+                    - generic [ref=e137]: 0.00 m
+                    - generic [ref=e138]: prismatic
+                    - generic [ref=e139]: 0.03 m
+              - generic [ref=e140]:
+                - button "全部归零" [ref=e141] [cursor=pointer]:
+                  - img [ref=e142]
+                  - text: 全部归零
+                - button "下发指令" [disabled] [ref=e145]:
+                  - img [ref=e146]
+                  - text: 下发指令
+            - generic [ref=e149]:
+              - generic [ref=e151]:
+                - img [ref=e152]
+                - generic [ref=e154]: Motion Recorder
+              - generic [ref=e155]:
+                - button "录制" [ref=e365] [cursor=pointer]:
+                  - img [ref=e366]
+                  - text: 录制
+                - button "回放" [ref=e159] [cursor=pointer]:
+                  - img [ref=e160]
+                  - text: 回放
+                - button "停止" [disabled] [ref=e162]:
+                  - img [ref=e163]
+                  - text: 停止
+              - generic [ref=e368]:
+                - generic [ref=e369]:
+                  - generic [ref=e370]: 轨迹 1
+                  - generic [ref=e371]: 00:00.0 / 00:43.2
+                - slider [ref=e372] [cursor=pointer]: "0"
+                - generic [ref=e374]: 217 帧 · 7 关节 · Sim
+                - generic [ref=e375]:
+                  - generic [ref=e376]:
+                    - button "0.5x" [ref=e377] [cursor=pointer]
+                    - button "1x" [ref=e378] [cursor=pointer]
+                    - button "2x" [ref=e379] [cursor=pointer]
+                  - button "循环" [ref=e380] [cursor=pointer]:
+                    - img [ref=e381]
+                    - text: 循环
+              - generic [ref=e386]:
+                - button "编辑 收起" [ref=e421] [cursor=pointer]:
+                  - generic [ref=e388]: 编辑
+                  - generic [ref=e389]: 收起
+                - generic [ref=e422]:
+                  - generic [ref=e423]:
+                    - generic [ref=e424]: 时间缩放
+                    - spinbutton [ref=e425]: "2"
+                    - generic [ref=e426]: ×
+                    - button "应用" [ref=e427] [cursor=pointer]
+                  - generic [ref=e428]:
+                    - generic [ref=e429]: 抽稀间隔
+                    - spinbutton [ref=e430]: "50"
+                    - generic [ref=e431]: ms
+                    - button "抽稀" [active] [ref=e432] [cursor=pointer]
+                  - generic [ref=e433]:
+                    - generic [ref=e434]: 裁剪区间
+                    - spinbutton [ref=e435]: "0"
+                    - generic [ref=e436]: →
+                    - spinbutton [ref=e437]: "43241"
+                    - generic [ref=e438]: ms
+                    - button "起" [ref=e439] [cursor=pointer]
+                    - button "终" [ref=e440] [cursor=pointer]
+                    - button "裁剪" [ref=e441] [cursor=pointer]
+              - generic [ref=e166]: 轨迹库 (1)
+              - generic [ref=e390]:
+                - button "轨迹 1 00:43.2 · 217f" [ref=e442] [cursor=pointer]:
+                  - generic [ref=e392]: 轨迹 1
+                  - generic [ref=e393]: 00:43.2 · 217f
+                - button "拼接到当前选中轨迹之后" [disabled] [ref=e394]:
+                  - img [ref=e395]
+                - button "删除轨迹" [ref=e399] [cursor=pointer]:
+                  - img [ref=e400]
+              - generic [ref=e168]:
+                - button "导入" [ref=e169] [cursor=pointer]:
+                  - img [ref=e170]
+                  - text: 导入
+                - button "导出" [ref=e173] [cursor=pointer]:
+                  - img [ref=e174]
+                  - text: 导出
+              - generic [ref=e403]:
+                - generic [ref=e404]:
+                  - generic [ref=e405]: 控制步长
+                  - spinbutton [ref=e406]: "50"
+                  - generic [ref=e407]: ms（0 = 原始帧）
+                  - generic [ref=e408]:
+                    - checkbox "速度" [checked] [ref=e409]
+                    - text: 速度
+                - generic [ref=e410]:
+                  - combobox [ref=e411]:
+                    - option "FollowJointTrajectory goal" [selected]
+                    - option "trajectory_msgs/JointTrajectory"
+                  - button "导出" [ref=e412] [cursor=pointer]:
+                    - img [ref=e413]
+                    - text: 导出
+                  - button "下发" [disabled] [ref=e416]:
+                    - img [ref=e417]
+                    - text: 下发
+        - generic [ref=e177]:
+          - generic [ref=e178]:
+            - generic [ref=e179]:
+              - generic [ref=e180]:
+                - img [ref=e181]
+                - generic [ref=e184]: URDF 模型
+              - generic [ref=e185]:
+                - button "上传" [ref=e186] [cursor=pointer]:
+                  - img [ref=e187]
+                  - text: 上传
+                - button "编辑" [ref=e190] [cursor=pointer]:
+                  - img [ref=e191]
+                  - text: 编辑
+            - generic [ref=e193] [cursor=pointer]:
+              - img [ref=e194]
+              - generic [ref=e197]: 上传 URDF
+              - generic [ref=e198]: .urdf / .xacro
+            - generic [ref=e199] [cursor=pointer]:
+              - img [ref=e200]
+              - generic [ref=e203]: 上传 Mesh 资源
+              - generic [ref=e204]: STL / DAE / OBJ，可多次追加
+            - generic [ref=e205] [cursor=pointer]:
+              - img [ref=e206]
+              - generic [ref=e210]: 上传 ZIP 包
+              - generic [ref=e211]: 包含 URDF + meshes 的压缩包
+            - generic [ref=e212]:
+              - generic [ref=e213]:
+                - img [ref=e214]
+                - generic [ref=e217]: industrial-5axis-arm.urdf
+              - button "恢复默认 URDF" [ref=e218] [cursor=pointer]:
+                - img [ref=e219]
+            - generic [ref=e222]:
+              - img [ref=e223]
+              - generic [ref=e226]: 当前 URDF 不含外部 mesh 引用。
+          - generic [ref=e227]:
+            - generic [ref=e228]:
+              - img [ref=e229]
+              - generic [ref=e232]: WebRTC Video Stream
+            - generic [ref=e236]: Stream idle
+            - generic [ref=e239]:
+              - generic [ref=e240]:
+                - textbox "wss://robot-ip:8443/ws 或 https://gateway/whep" [ref=e241]
+                - button "Start" [disabled] [ref=e242]:
+                  - img [ref=e243]
+                  - text: Start
+              - generic [ref=e245]:
+                - generic [ref=e246]: Stream ID
+                - textbox "Stream ID" [ref=e247]:
+                  - /placeholder: camera_front
+                  - text: camera_front
+              - generic [ref=e249]: 支持 ws://、wss:// 自建信令，或 http(s):// WHEP 端点
+          - generic [ref=e250]:
+            - generic [ref=e251]:
+              - img [ref=e252]
+              - generic [ref=e254]: Telemetry
+            - generic [ref=e255]:
+              - generic [ref=e256]:
+                - generic [ref=e257]:
+                  - img [ref=e258]
+                  - generic [ref=e260]: Battery
+                - generic [ref=e261]: 76.2%
+                - generic [ref=e262]: 23.3 V
+              - generic [ref=e263]:
+                - generic [ref=e264]:
+                  - img [ref=e265]
+                  - generic [ref=e268]: Velocity
+                - generic [ref=e269]: 0.55 m/s
+                - generic [ref=e270]: "-0.26 rad/s"
+              - generic [ref=e271]:
+                - generic [ref=e272]:
+                  - img [ref=e273]
+                  - generic [ref=e275]: CPU Temp
+                - generic [ref=e276]: 43.8°C
+              - generic [ref=e277]:
+                - generic [ref=e278]:
+                  - img [ref=e279]
+                  - generic [ref=e281]: Joints
+                - generic [ref=e282]: "7"
+                - generic [ref=e353]: joint1, joint2, joint3
+            - generic [ref=e283]:
+              - generic [ref=e285]: Battery Level
+              - generic [ref=e290]: Velocity
+              - generic [ref=e295]: CPU Temperature
+          - generic [ref=e299]:
+            - generic [ref=e300]:
+              - img [ref=e301]
+              - generic [ref=e303]: Control Desk
+            - generic [ref=e304]:
+              - generic [ref=e305]: Mode
+              - generic [ref=e306]:
+                - button "Simulation" [ref=e307] [cursor=pointer]
+                - button "Live ROS" [ref=e308] [cursor=pointer]
+            - generic [ref=e309]:
+              - img [ref=e310]
+              - textbox "ws://localhost:9090" [ref=e316]
+              - button "Set" [ref=e317] [cursor=pointer]
+            - generic [ref=e318]:
+              - generic [ref=e319]:
+                - generic [ref=e320]: Gamepad Input
+                - generic [ref=e321]: Deadzone applied
+              - generic [ref=e322]:
+                - generic [ref=e324]:
+                  - generic [ref=e325]: Linear X
+                  - generic [ref=e326]: "0.00"
+                - generic [ref=e329]:
+                  - generic [ref=e330]: Angular Z
+                  - generic [ref=e331]: "0.00"
+            - generic [ref=e333]:
+              - button "Trigger E-Stop" [ref=e334] [cursor=pointer]:
+                - img [ref=e335]
+                - text: Trigger E-Stop
+              - button "Zero Velocity" [ref=e340] [cursor=pointer]
+            - generic [ref=e341]:
+              - generic [ref=e342]:
+                - img [ref=e343]
+                - generic [ref=e346]: System Log
+              - generic [ref=e347]:
+                - generic [ref=e348]: 抽稀（最小间隔 50ms）：217 → 217 帧 / 43.2s
+                - generic [ref=e349]: 时间缩放 2x：217 → 217 帧 / 43.2s
+                - generic [ref=e350]: 录制完成：轨迹 1（217 帧 / 21.6s / 7 关节）
+                - generic [ref=e351]: 开始录制（7 个关节，Simulation）
+                - generic [ref=e352]: Simulation mode active
+                - generic [ref=e363]: Disconnected from ROS bridge
+                - generic [ref=e420]: Disconnected from ROS bridge
+                - generic [ref=e443]: Simulation mode active
+                - generic [ref=e444]: Disconnected from ROS bridge

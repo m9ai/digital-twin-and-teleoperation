@@ -45,7 +45,7 @@
   <joint name="base_to_joint1_housing" type="fixed">
     <parent link="base_link" />
     <child link="joint1_housing" />
-    <origin xyz="0 0 0.15" rpy="0 0 0" />
+    <origin xyz="0 0 0.075" rpy="0 0 0" />
   </joint>
 
   <!-- Link 1: vertical column -->
@@ -62,7 +62,7 @@
   <joint name="joint1" type="revolute">
     <parent link="joint1_housing" />
     <child link="link1" />
-    <origin xyz="0 0 0" rpy="0 0 0" />
+    <origin xyz="0 0 0.1" rpy="0 0 0" />
     <axis xyz="0 0 1" />
     <limit lower="-3.14" upper="3.14" effort="100" velocity="2" />
   </joint>
@@ -212,9 +212,9 @@
   <!-- Tool / end effector -->
   <link name="tool0">
     <visual>
-      <origin xyz="0 0 0.04" rpy="0 0 0" />
+      <origin xyz="0 0 0.02" rpy="0 0 0" />
       <geometry>
-        <box size="0.04 0.04 0.08" />
+        <cylinder radius="0.045" length="0.04" />
       </geometry>
       <material name="tool_orange" />
     </visual>
@@ -224,5 +224,43 @@
     <parent link="link5" />
     <child link="tool0" />
     <origin xyz="0 0 0.12" rpy="0 0 0" />
+  </joint>
+
+  <!-- Gripper finger: left (slides along -y) -->
+  <link name="finger_left">
+    <visual>
+      <origin xyz="0 -0.015 0.05" rpy="0 0 0" />
+      <geometry>
+        <box size="0.018 0.03 0.09" />
+      </geometry>
+      <material name="joint_dark" />
+    </visual>
+  </link>
+
+  <joint name="finger_left_joint" type="prismatic">
+    <parent link="tool0" />
+    <child link="finger_left" />
+    <origin xyz="0 0 0.04" rpy="0 0 0" />
+    <axis xyz="0 -1 0" />
+    <limit lower="0" upper="0.03" effort="20" velocity="0.1" />
+  </joint>
+
+  <!-- Gripper finger: right (slides along +y) -->
+  <link name="finger_right">
+    <visual>
+      <origin xyz="0 0.015 0.05" rpy="0 0 0" />
+      <geometry>
+        <box size="0.018 0.03 0.09" />
+      </geometry>
+      <material name="joint_dark" />
+    </visual>
+  </link>
+
+  <joint name="finger_right_joint" type="prismatic">
+    <parent link="tool0" />
+    <child link="finger_right" />
+    <origin xyz="0 0 0.04" rpy="0 0 0" />
+    <axis xyz="0 1 0" />
+    <limit lower="0" upper="0.03" effort="20" velocity="0.1" />
   </joint>
 </robot>

@@ -17,6 +17,96 @@ export interface SceneHandles {
   applyJointState: (state: JointState) => void;
   dispose: () => void;
   resize: () => void;
+  /**
+   * Forward kinematics: map joint-position samples to end-effector world
+   * coordinates. Joint values are temporarily overwritten and restored, so
+   * the live pose driven by telemetry is never left modified.
+   */
+  computeEndEffectorPath: (samples: number[][], jointNames: string[]) => THREE.Vector3[];
+  /** Draw (or clear, with null) the end-effector path polyline. */
+  setTrajectoryPath: (points: THREE.Vector3[] | null) => void;
+  /** Move the playhead marker along the drawn path. */
+  setPathPlayhead: (point: THREE.Vector3 | null) => void;
+}
+
+/** The last link of the kinematic chain: a link that is no joint's parent. */
+function findEndEffectorLink(robot: THREE.Object3D): THREE.Object3D | null {
+  const urdf = robot as unknown as {
+    joints?: Record<string, { parent?: THREE.Object3D; child?: THREE.Object3D }>;
+    links?: Record<string, THREE.Object3D>;
+  };
+  if (!urdf.links) return null;
+
+  const parentNames = new Set<string>();
+  for (const joint of Object.values(urdf.joints ?? {})) {
+    if (joint.parent?.name) parentNames.add(joint.parent.name);
+  }
+
+  const leaves = Object.values(urdf.links).filter((link) => !parentNames.has(link.name));
+  return leaves[leaves.length - 1] ?? null;
+}
+
+export function createTrajectoryPathOverlay(scene: THREE.Scene) {
+  const group = new THREE.Group();
+  group.name = 'trajectory-path';
+  scene.add(group);
+
+  const playhead = new THREE.Mesh(
+    new THREE.SphereGeometry(0.012, 16, 16),
+    new THREE.MeshBasicMaterial({ color: 0xffffff })
+  );
+  playhead.visible = false;
+  group.add(playhead);
+
+  const clearGroup = () => {
+    // Keep the playhead marker; drop everything else from the previous path.
+    for (const child of group.children) {
+      if (child === playhead) continue;
+      group.remove(child);
+      const mesh = child as THREE.Mesh;
+      mesh.geometry?.dispose?.();
+      const material = mesh.material as THREE.Material | THREE.Material[] | undefined;
+      if (Array.isArray(material)) material.forEach((m) => m.dispose());
+      else material?.dispose?.();
+    }
+  };
+
+  const setTrajectoryPath = (points: THREE.Vector3[] | null) => {
+    clearGroup();
+    if (!points || points.length < 2) return;
+
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const line = new THREE.Line(
+      geometry,
+      new THREE.LineBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.9 })
+    );
+    group.add(line);
+
+    const marker = (point: THREE.Vector3, color: number) => {
+      const dot = new THREE.Mesh(
+        new THREE.SphereGeometry(0.008, 12, 12),
+        new THREE.MeshBasicMaterial({ color })
+      );
+      dot.position.copy(point);
+      group.add(dot);
+    };
+    marker(points[0], 0x34d399);
+    marker(points[points.length - 1], 0xf97316);
+  };
+
+  const setPathPlayhead = (point: THREE.Vector3 | null) => {
+    playhead.visible = Boolean(point);
+    if (point) playhead.position.copy(point);
+  };
+
+  const dispose = () => {
+    setTrajectoryPath(null);
+    scene.remove(group);
+    playhead.geometry.dispose();
+    (playhead.material as THREE.Material).dispose();
+  };
+
+  return { setTrajectoryPath, setPathPlayhead, dispose };
 }
 
 function createDefaultPBRMaterial(color?: number): THREE.MeshStandardMaterial {
@@ -237,14 +327,15 @@ export function createURDFScene(container: HTMLElement, urdfUrl: string): Promis
         robot.updateMatrix();
         robot.updateMatrixWorld(true);
 
+        const urdfJoints = (robot as unknown as {
+          joints: Record<string, { setJointValue: (...values: number[]) => void; angle?: number }>;
+        }).joints;
+
         const applyJointState = (state: JointState) => {
           if (!robot) return;
-          const urdfRobot = robot as unknown as {
-            joints: Record<string, { setJointValue: (...values: number[]) => void }>;
-          };
           let changed = false;
           state.name.forEach((jointName, index) => {
-            const joint = urdfRobot.joints?.[jointName];
+            const joint = urdfJoints?.[jointName];
             if (joint && typeof joint.setJointValue === 'function') {
               const value = state.position[index] ?? 0;
               joint.setJointValue(value);
@@ -256,6 +347,30 @@ export function createURDFScene(container: HTMLElement, urdfUrl: string): Promis
           }
         };
 
+        const endEffector = findEndEffectorLink(robot);
+
+        const computeEndEffectorPath = (samples: number[][], jointNames: string[]): THREE.Vector3[] => {
+          if (!robot || !endEffector || !urdfJoints) return [];
+
+          const saved = jointNames.map((name) => urdfJoints[name]?.angle ?? 0);
+          const points: THREE.Vector3[] = [];
+
+          for (const sample of samples) {
+            jointNames.forEach((name, i) => urdfJoints[name]?.setJointValue(sample[i] ?? 0));
+            robot.updateMatrixWorld(true);
+            points.push(endEffector.getWorldPosition(new THREE.Vector3()));
+          }
+
+          // Restore the live pose; the whole sweep is synchronous so it never
+          // reaches the renderer in an intermediate state.
+          jointNames.forEach((name, i) => urdfJoints[name]?.setJointValue(saved[i]));
+          robot.updateMatrixWorld(true);
+
+          return points;
+        };
+
+        const overlay = createTrajectoryPathOverlay(scene);
+
         const animate = () => {
           animationId = requestAnimationFrame(animate);
           controls.update();
@@ -265,6 +380,7 @@ export function createURDFScene(container: HTMLElement, urdfUrl: string): Promis
 
         const dispose = () => {
           cancelAnimationFrame(animationId);
+          overlay.dispose();
           controls.dispose();
           renderer.dispose();
           if (container.contains(renderer.domElement)) {
@@ -280,7 +396,19 @@ export function createURDFScene(container: HTMLElement, urdfUrl: string): Promis
           renderer.setSize(w, h);
         };
 
-        resolve({ scene, camera, renderer, controls, robot, applyJointState, dispose, resize });
+        resolve({
+          scene,
+          camera,
+          renderer,
+          controls,
+          robot,
+          applyJointState,
+          dispose,
+          resize,
+          computeEndEffectorPath,
+          setTrajectoryPath: overlay.setTrajectoryPath,
+          setPathPlayhead: overlay.setPathPlayhead,
+        });
       })
       .catch((err: unknown) => reject(err));
   });
@@ -433,23 +561,42 @@ export function createFallbackScene(container: HTMLElement): SceneHandles {
     joint5: joint5Pivot,
   };
 
-  const applyJointState = (state: JointState) => {
-    state.name.forEach((name, index) => {
+  const axisForJoint = (name: string): 'x' | 'y' | 'z' => {
+    if (name === 'joint2' || name === 'joint3') return 'y';
+    if (name === 'joint5') return 'x';
+    return 'z';
+  };
+
+  const setFallbackJoints = (jointNames: string[], values: number[]) => {
+    jointNames.forEach((name, i) => {
       const part = parts[name];
-      if (part) {
-        const value = state.position[index] ?? 0;
-        if (name === 'joint1') {
-          part.rotation.z = value;
-        } else if (name === 'joint2' || name === 'joint3') {
-          part.rotation.y = value;
-        } else if (name === 'joint4') {
-          part.rotation.z = value;
-        } else if (name === 'joint5') {
-          part.rotation.x = value;
-        }
-      }
+      if (part) part.rotation[axisForJoint(name)] = values[i] ?? 0;
     });
   };
+
+  const applyJointState = (state: JointState) => {
+    setFallbackJoints(
+      state.name,
+      state.name.map((_, index) => state.position[index] ?? 0)
+    );
+  };
+
+  const computeEndEffectorPath = (samples: number[][], jointNames: string[]): THREE.Vector3[] => {
+    const saved = jointNames.map((name) => parts[name]?.rotation[axisForJoint(name)] ?? 0);
+    const points: THREE.Vector3[] = [];
+
+    for (const sample of samples) {
+      setFallbackJoints(jointNames, sample);
+      robotGroup.updateMatrixWorld(true);
+      points.push(tool0.getWorldPosition(new THREE.Vector3()));
+    }
+
+    setFallbackJoints(jointNames, saved);
+    robotGroup.updateMatrixWorld(true);
+    return points;
+  };
+
+  const overlay = createTrajectoryPathOverlay(scene);
 
   return {
     scene,
@@ -458,8 +605,12 @@ export function createFallbackScene(container: HTMLElement): SceneHandles {
     controls,
     robot: robotGroup,
     applyJointState,
+    computeEndEffectorPath,
+    setTrajectoryPath: overlay.setTrajectoryPath,
+    setPathPlayhead: overlay.setPathPlayhead,
     dispose: () => {
       cancelAnimationFrame(animationId);
+      overlay.dispose();
       controls.dispose();
       renderer.dispose();
       if (container.contains(renderer.domElement)) {

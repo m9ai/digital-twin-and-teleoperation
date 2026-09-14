@@ -87,6 +87,21 @@ export class ROSClient {
     this.publish('/cmd_vel', 'geometry_msgs/Twist', cmd as unknown as Record<string, unknown>);
   }
 
+  /** Publish a manual jog target as a `sensor_msgs/JointState` on /joint_command. */
+  publishJointCommand(names: string[], positions: number[]): void {
+    const now = Date.now() / 1000;
+    this.publish('/joint_command', 'sensor_msgs/JointState', {
+      header: {
+        stamp: { secs: Math.floor(now), nsecs: Math.floor((now % 1) * 1e9) },
+        frame_id: '',
+      },
+      name: names,
+      position: positions,
+      velocity: [],
+      effort: [],
+    });
+  }
+
   callService<TReq extends Record<string, unknown>, TRes>(serviceName: string, request: TReq): Promise<TRes> {
     if (!this.ros) {
       return Promise.reject(new Error('ROS not connected'));
@@ -128,13 +143,33 @@ export class ROSClient {
   }
 }
 
-export function buildJointStateMessage(): JointState {
-  const names = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5'];
+const FALLBACK_JOINTS = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5'];
+
+/**
+ * Build the simulated /joint_states message.
+ *
+ * Joint names come from the loaded URDF so the twin stays in sync with the
+ * model. When manual jog is active, the operator's targets win over the
+ * generated animation for the joints they are driving.
+ */
+export function buildJointStateMessage(
+  jointNames: string[] = FALLBACK_JOINTS,
+  targets: Record<string, number> = {},
+  jogActive = false
+): JointState {
+  const names = jointNames.length > 0 ? jointNames : FALLBACK_JOINTS;
   const time = Date.now() / 1000;
+
   return {
     name: names,
-    position: names.map((_, i) => Math.sin(time * 0.8 + i) * 0.6),
-    velocity: names.map((_, i) => Math.cos(time * 0.8 + i) * 0.3),
+    position: names.map((name, i) => {
+      if (jogActive && targets[name] !== undefined) return targets[name];
+      return Math.sin(time * 0.8 + i) * 0.6;
+    }),
+    velocity: names.map((name, i) => {
+      if (jogActive && targets[name] !== undefined) return 0;
+      return Math.cos(time * 0.8 + i) * 0.3;
+    }),
     effort: names.map(() => Math.random() * 2),
   };
 }

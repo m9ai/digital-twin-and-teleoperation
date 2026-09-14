@@ -1,0 +1,226 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e6]
+      - heading "ROS 2 Digital Twin & Teleoperation" [level=1] [ref=e8]
+    - generic [ref=e9]: Embodied AI Platform
+  - main [ref=e10]:
+    - generic [ref=e11]:
+      - generic [ref=e12]:
+        - generic [ref=e13]:
+          - generic [ref=e14]:
+            - img [ref=e15]
+            - generic [ref=e19]: Connected
+          - generic [ref=e20]:
+            - img [ref=e21]
+            - generic [ref=e24]: 12 ms
+          - generic [ref=e25]: ws://localhost:9090
+        - generic [ref=e27]: READY
+      - generic [ref=e28]:
+        - generic [ref=e29]:
+          - generic [ref=e30]:
+            - generic [ref=e31]:
+              - img [ref=e32]
+              - generic [ref=e37]: Digital Twin (URDF / Three.js)
+            - generic [ref=e38]:
+              - generic [ref=e42]: Loading robot model...
+              - button "Reset camera" [ref=e43] [cursor=pointer]:
+                - img [ref=e44]
+          - generic [ref=e47]:
+            - generic [ref=e48]:
+              - generic [ref=e49]:
+                - img [ref=e50]
+                - generic [ref=e52]: LiDAR Point Cloud
+              - button "Pause animation" [ref=e56] [cursor=pointer]:
+                - img [ref=e57]
+            - generic [ref=e60]:
+              - generic [ref=e61]:
+                - generic [ref=e62]:
+                  - img [ref=e63]
+                  - generic [ref=e68]: Joint Jog
+                - button "接管关节" [ref=e69] [cursor=pointer]
+              - generic [ref=e70]:
+                - generic [ref=e71]:
+                  - generic [ref=e72]:
+                    - generic [ref=e73]: joint1
+                    - generic [ref=e74]: 0.000 rad
+                  - slider [ref=e75] [cursor=pointer]: "4e-16"
+                  - generic [ref=e76]:
+                    - generic [ref=e77]: "-3.14 rad"
+                    - generic [ref=e78]: revolute
+                    - generic [ref=e79]: 3.14 rad
+                - generic [ref=e80]:
+                  - generic [ref=e81]:
+                    - generic [ref=e82]: joint2
+                    - generic [ref=e83]: 0.000 rad
+                  - slider [ref=e84] [cursor=pointer]: "2e-16"
+                  - generic [ref=e85]:
+                    - generic [ref=e86]: "-1.57 rad"
+                    - generic [ref=e87]: revolute
+                    - generic [ref=e88]: 1.57 rad
+                - generic [ref=e89]:
+                  - generic [ref=e90]:
+                    - generic [ref=e91]: joint3
+                    - generic [ref=e92]: 0.000 rad
+                  - slider [ref=e93] [cursor=pointer]: "2e-16"
+                  - generic [ref=e94]:
+                    - generic [ref=e95]: "-1.57 rad"
+                    - generic [ref=e96]: revolute
+                    - generic [ref=e97]: 1.57 rad
+                - generic [ref=e98]:
+                  - generic [ref=e99]:
+                    - generic [ref=e100]: joint4
+                    - generic [ref=e101]: 0.000 rad
+                  - slider [ref=e102] [cursor=pointer]: "4e-16"
+                  - generic [ref=e103]:
+                    - generic [ref=e104]: "-3.14 rad"
+                    - generic [ref=e105]: revolute
+                    - generic [ref=e106]: 3.14 rad
+                - generic [ref=e107]:
+                  - generic [ref=e108]:
+                    - generic [ref=e109]: joint5
+                    - generic [ref=e110]: 0.000 rad
+                  - slider [ref=e111] [cursor=pointer]: "2e-16"
+                  - generic [ref=e112]:
+                    - generic [ref=e113]: "-1.57 rad"
+                    - generic [ref=e114]: revolute
+                    - generic [ref=e115]: 1.57 rad
+                - generic [ref=e116]:
+                  - generic [ref=e117]:
+                    - generic [ref=e118]: finger_left_joint
+                    - generic [ref=e119]: 0.000 m
+                  - slider [ref=e120] [cursor=pointer]: "0"
+                  - generic [ref=e121]:
+                    - generic [ref=e122]: 0.00 m
+                    - generic [ref=e123]: prismatic
+                    - generic [ref=e124]: 0.03 m
+                - generic [ref=e125]:
+                  - generic [ref=e126]:
+                    - generic [ref=e127]: finger_right_joint
+                    - generic [ref=e128]: 0.000 m
+                  - slider [ref=e129] [cursor=pointer]: "0"
+                  - generic [ref=e130]:
+                    - generic [ref=e131]: 0.00 m
+                    - generic [ref=e132]: prismatic
+                    - generic [ref=e133]: 0.03 m
+              - generic [ref=e134]:
+                - button "全部归零" [ref=e135] [cursor=pointer]:
+                  - img [ref=e136]
+                  - text: 全部归零
+                - button "下发指令" [disabled] [ref=e139]:
+                  - img [ref=e140]
+                  - text: 下发指令
+        - generic [ref=e143]:
+          - generic [ref=e144]:
+            - generic [ref=e145]:
+              - generic [ref=e146]:
+                - img [ref=e147]
+                - generic [ref=e150]: URDF 模型
+              - generic [ref=e151]:
+                - button "上传" [ref=e152] [cursor=pointer]:
+                  - img [ref=e153]
+                  - text: 上传
+                - button "编辑" [ref=e156] [cursor=pointer]:
+                  - img [ref=e157]
+                  - text: 编辑
+            - generic [ref=e159] [cursor=pointer]:
+              - img [ref=e160]
+              - generic [ref=e163]: 上传 URDF
+              - generic [ref=e164]: .urdf / .xacro
+            - generic [ref=e165] [cursor=pointer]:
+              - img [ref=e166]
+              - generic [ref=e169]: 上传 Mesh 资源
+              - generic [ref=e170]: STL / DAE / OBJ，可多次追加
+            - generic [ref=e171] [cursor=pointer]:
+              - img [ref=e172]
+              - generic [ref=e176]: 上传 ZIP 包
+              - generic [ref=e177]: 包含 URDF + meshes 的压缩包
+            - generic [ref=e178]:
+              - generic [ref=e179]:
+                - img [ref=e180]
+                - generic [ref=e183]: industrial-5axis-arm.urdf
+              - button "恢复默认 URDF" [ref=e184] [cursor=pointer]:
+                - img [ref=e185]
+            - generic [ref=e188]:
+              - img [ref=e189]
+              - generic [ref=e192]: 当前 URDF 不含外部 mesh 引用。
+          - generic [ref=e193]:
+            - generic [ref=e194]:
+              - img [ref=e195]
+              - generic [ref=e198]: WebRTC Video Stream
+            - generic [ref=e202]: Stream idle
+            - generic [ref=e206]:
+              - textbox "wss://robot-ip:8443/ws" [ref=e207]
+              - button "Start" [disabled] [ref=e208]:
+                - img [ref=e209]
+                - text: Start
+          - generic [ref=e211]:
+            - generic [ref=e212]:
+              - img [ref=e213]
+              - generic [ref=e215]: Telemetry
+            - generic [ref=e216]:
+              - generic [ref=e217]:
+                - generic [ref=e218]:
+                  - img [ref=e219]
+                  - generic [ref=e221]: Battery
+                - generic [ref=e222]: 84.0%
+                - generic [ref=e223]: 24.2 V
+              - generic [ref=e224]:
+                - generic [ref=e225]:
+                  - img [ref=e226]
+                  - generic [ref=e229]: Velocity
+                - generic [ref=e230]: 0.00 m/s
+                - generic [ref=e231]: 0.00 rad/s
+              - generic [ref=e232]:
+                - generic [ref=e233]:
+                  - img [ref=e234]
+                  - generic [ref=e236]: CPU Temp
+                - generic [ref=e237]: 42.0°C
+              - generic [ref=e238]:
+                - generic [ref=e239]:
+                  - img [ref=e240]
+                  - generic [ref=e242]: Joints
+                - generic [ref=e243]: "0"
+            - generic [ref=e244]:
+              - generic [ref=e246]: Battery Level
+              - generic [ref=e251]: Velocity
+              - generic [ref=e256]: CPU Temperature
+          - generic [ref=e260]:
+            - generic [ref=e261]:
+              - img [ref=e262]
+              - generic [ref=e264]: Control Desk
+            - generic [ref=e265]:
+              - generic [ref=e266]: Mode
+              - generic [ref=e267]:
+                - button "Simulation" [ref=e268] [cursor=pointer]
+                - button "Live ROS" [ref=e269] [cursor=pointer]
+            - generic [ref=e270]:
+              - img [ref=e271]
+              - textbox "ws://localhost:9090" [ref=e277]
+              - button "Set" [ref=e278] [cursor=pointer]
+            - generic [ref=e279]:
+              - generic [ref=e280]:
+                - generic [ref=e281]: Gamepad Input
+                - generic [ref=e282]: Deadzone applied
+              - generic [ref=e283]:
+                - generic [ref=e285]:
+                  - generic [ref=e286]: Linear X
+                  - generic [ref=e287]: "0.00"
+                - generic [ref=e290]:
+                  - generic [ref=e291]: Angular Z
+                  - generic [ref=e292]: "0.00"
+            - generic [ref=e294]:
+              - button "Trigger E-Stop" [ref=e295] [cursor=pointer]:
+                - img [ref=e296]
+                - text: Trigger E-Stop
+              - button "Zero Velocity" [ref=e301] [cursor=pointer]
+            - generic [ref=e302]:
+              - generic [ref=e303]:
+                - img [ref=e304]
+                - generic [ref=e307]: System Log
+              - generic [ref=e308]:
+                - generic [ref=e309]: Simulation mode active
+                - generic [ref=e310]: Disconnected from ROS bridge
+                - generic [ref=e311]: Disconnected from ROS bridge
+                - generic [ref=e312]: Simulation mode active
+                - generic [ref=e313]: Disconnected from ROS bridge

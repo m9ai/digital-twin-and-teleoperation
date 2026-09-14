@@ -3,6 +3,7 @@ import { ROSClient, buildJointStateMessage, buildTelemetryMessage } from '@/lib/
 import { rosClientRef } from '@/lib/rosRef';
 import { useConnectionStore } from '@/store/connectionStore';
 import { useRobotStore } from '@/store/robotStore';
+import { useURDFStore } from '@/store/urdfStore';
 import type { JointState, RobotTelemetry } from '@/types';
 
 const JOINT_TOPIC = '/joint_states';
@@ -73,7 +74,15 @@ export function useROS() {
     if (useSimulation) {
       disconnect();
       simInterval.current = window.setInterval(() => {
-        const jointState = buildJointStateMessage();
+        // Read the latest URDF joints / jog targets without re-subscribing so
+        // that the 100 ms simulation loop is never torn down mid-session.
+        const { joints } = useURDFStore.getState();
+        const { jointTargets, jogActive } = useRobotStore.getState();
+        const jointState = buildJointStateMessage(
+          joints.map((j) => j.name),
+          jointTargets,
+          jogActive
+        );
         const telemetry = buildTelemetryMessage();
         setJointState(jointState);
         setTelemetry(telemetry);

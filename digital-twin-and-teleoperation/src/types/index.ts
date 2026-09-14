@@ -30,3 +30,22 @@ export interface GamepadAxes {
   x: number;
   y: number;
 }
+
+/** One sample of a recorded motion: joint positions at a relative timestamp. */
+export interface TrajectoryFrame {
+  /** Milliseconds elapsed since the start of the recording. */
+  t: number;
+  /** Joint positions, index-aligned with the owning trajectory's `jointNames`. */
+  position: number[];
+}
+
+/** A recordable / replayable joint-space motion. */
+export interface JointTrajectory {
+  id: string;
+  name: string;
+  createdAt: number;
+  jointNames: string[];
+  durationMs: number;
+  frames: TrajectoryFrame[];
+  source: 'simulation' | 'live';
+}
