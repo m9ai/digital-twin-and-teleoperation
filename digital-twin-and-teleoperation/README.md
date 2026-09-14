@@ -166,12 +166,12 @@ ros2 topic echo /joint_command
 
 ## 部署（Vercel）
 
-`vercel.json` 声明构建与输出目录，仓库根的 `.github/workflows/deploy-vercel.yml` 负责 CI：main 推送走生产部署，PR 走预览部署（单页应用 + PWA 需要真实域名验证，故保留 CI 部署而非仅靠 Git 集成）。
+使用 Vercel Git 集成，无需 GitHub Actions：推送 `main` 自动生产部署，PR 自动生成预览环境。
 
-1. Vercel 导入仓库，Root Directory 设为 `digital-twin-and-teleoperation`。
-2. `vercel link` 后把 `.vercel/project.json` 里的 `orgId` / `projectId` 与账号 token 填入仓库 Secrets：`VERCEL_ORG_ID`、`VERCEL_PROJECT_ID`、`VERCEL_TOKEN`。
-3. 可选：仓库 Variables 加 `VITE_SITE_URL` 覆盖默认域名（优先级高于 `.env`）。
-4. 推送到 `main` 即自动部署。
+1. Vercel 导入仓库；若项目位于子目录，Root Directory 设为 `digital-twin-and-teleoperation`。
+2. `.env` 已随仓库提交（仅含公开域名，无密钥），构建无需额外环境变量；绑定自定义域名后，可在 Vercel 项目里设 `VITE_SITE_URL` 覆盖，不用改代码。
+
+> 不要同时启用 GitHub Actions 部署：会与 Git 集成重复触发两次构建。
 
 `sw.js` 设为 `max-age=0, must-revalidate`，确保新版本能被立即发现；`assets/` 带 hash 故可长缓存。
 

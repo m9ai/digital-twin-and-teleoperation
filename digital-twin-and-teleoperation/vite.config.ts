@@ -1,11 +1,46 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
+import { readFileSync } from 'node:fs';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import { VitePWA } from 'vite-plugin-pwa';
 
+const DEFAULT_SITE_URL = 'https://embodied-ai-platform.vercel.app';
+
+/** CI env wins, then .env, then the default origin. */
+function resolveSiteUrl(): string {
+  const fromEnv = process.env.VITE_SITE_URL?.trim();
+  if (fromEnv) return fromEnv.replace(/\/$/, '');
+  try {
+    const match = readFileSync(path.resolve(__dirname, '.env'), 'utf8').match(
+      /^VITE_SITE_URL=(.*)$/m,
+    );
+    if (match?.[1]?.trim()) return match[1].trim().replace(/\/$/, '');
+  } catch {
+    // No .env (e.g. a clean CI checkout): fall through to the default.
+  }
+  return DEFAULT_SITE_URL;
+}
+
+/**
+ * Vite only substitutes %VITE_SITE_URL% when the variable is actually defined;
+ * leftover placeholders make vite-plugin-pwa fail with "URI malformed".
+ * Replacing them up front keeps the build working on any environment.
+ */
+function htmlSiteUrl(): Plugin {
+  const siteUrl = resolveSiteUrl();
+  return {
+    name: 'html-site-url',
+    transformIndexHtml: {
+      order: 'pre',
+      handler: (html) => html.replaceAll('%VITE_SITE_URL%', siteUrl),
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
     react(),
+    htmlSiteUrl(),
     VitePWA({
       // A teleoperation session must never be reloaded underneath the operator:
       // new builds are announced through PWABadge and applied on confirmation.
