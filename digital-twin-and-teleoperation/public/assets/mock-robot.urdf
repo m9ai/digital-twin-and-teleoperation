@@ -1,0 +1,154 @@
+<?xml version="1.0"?>
+<robot name="mock_arm">
+  <material name="cyan">
+    <color rgba="0.13 0.83 0.93 1" />
+  </material>
+  <material name="grey">
+    <color rgba="0.58 0.64 0.72 1" />
+  </material>
+  <material name="dark_grey">
+    <color rgba="0.39 0.45 0.52 1" />
+  </material>
+  <material name="red">
+    <color rgba="0.96 0.25 0.37 1" />
+  </material>
+  <material name="joint">
+    <color rgba="0.2 0.25 0.3 1" />
+  </material>
+
+  <!-- Base link -->
+  <link name="base_link">
+    <visual>
+      <geometry>
+        <box size="0.4 0.4 0.1" />
+      </geometry>
+      <material name="cyan" />
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.4 0.4 0.1" />
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Joint 1 visual housing -->
+  <link name="joint1_housing">
+    <visual>
+      <geometry>
+        <sphere radius="0.07" />
+      </geometry>
+      <material name="joint" />
+    </visual>
+  </link>
+
+  <joint name="base_to_joint1_housing" type="fixed">
+    <parent link="base_link" />
+    <child link="joint1_housing" />
+    <origin xyz="0 0 0.1" rpy="0 0 0" />
+  </joint>
+
+  <!-- Link 1 -->
+  <link name="link1">
+    <visual>
+      <origin xyz="0 0 0.3" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.05" length="0.6" />
+      </geometry>
+      <material name="grey" />
+    </visual>
+  </link>
+
+  <joint name="base_link_to_link1" type="revolute">
+    <parent link="joint1_housing" />
+    <child link="link1" />
+    <origin xyz="0 0 0" rpy="0 0 0" />
+    <axis xyz="0 0 1" />
+    <limit lower="-1.57" upper="1.57" effort="10" velocity="1" />
+  </joint>
+
+  <!-- Joint 2 visual housing -->
+  <link name="joint2_housing">
+    <visual>
+      <geometry>
+        <sphere radius="0.055" />
+      </geometry>
+      <material name="joint" />
+    </visual>
+  </link>
+
+  <joint name="link1_to_joint2_housing" type="fixed">
+    <parent link="link1" />
+    <child link="joint2_housing" />
+    <origin xyz="0 0 0.6" rpy="0 0 0" />
+  </joint>
+
+  <!-- Link 2 -->
+  <link name="link2">
+    <visual>
+      <origin xyz="0 0 0.25" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.04" length="0.5" />
+      </geometry>
+      <material name="dark_grey" />
+    </visual>
+  </link>
+
+  <joint name="link1_to_link2" type="revolute">
+    <parent link="joint2_housing" />
+    <child link="link2" />
+    <origin xyz="0 0 0" rpy="0 0 0" />
+    <axis xyz="1 0 0" />
+    <limit lower="-1.57" upper="1.57" effort="10" velocity="1" />
+  </joint>
+
+  <!-- Joint 3 visual housing -->
+  <link name="joint3_housing">
+    <visual>
+      <geometry>
+        <sphere radius="0.045" />
+      </geometry>
+      <material name="joint" />
+    </visual>
+  </link>
+
+  <joint name="link2_to_joint3_housing" type="fixed">
+    <parent link="link2" />
+    <child link="joint3_housing" />
+    <origin xyz="0 0 0.5" rpy="0 0 0" />
+  </joint>
+
+  <!-- Link 3 -->
+  <link name="link3">
+    <visual>
+      <origin xyz="0 0 0.15" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.03" length="0.3" />
+      </geometry>
+      <material name="grey" />
+    </visual>
+  </link>
+
+  <joint name="link2_to_link3" type="revolute">
+    <parent link="joint3_housing" />
+    <child link="link3" />
+    <origin xyz="0 0 0" rpy="0 0 0" />
+    <axis xyz="1 0 0" />
+    <limit lower="-1.57" upper="1.57" effort="10" velocity="1" />
+  </joint>
+
+  <!-- Gripper -->
+  <link name="gripper">
+    <visual>
+      <geometry>
+        <sphere radius="0.06" />
+      </geometry>
+      <material name="red" />
+    </visual>
+  </link>
+
+  <joint name="link3_to_gripper" type="fixed">
+    <parent link="link3" />
+    <child link="gripper" />
+    <origin xyz="0 0 0.3" rpy="0 0 0" />
+  </joint>
+</robot>
