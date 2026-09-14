@@ -22,9 +22,11 @@ function resolveSiteUrl(): string {
 }
 
 /**
- * Vite only substitutes %VITE_SITE_URL% when the variable is actually defined;
- * leftover placeholders make vite-plugin-pwa fail with "URI malformed".
- * Replacing them up front keeps the build working on any environment.
+ * A custom placeholder is used instead of Vite's %VITE_SITE_URL% syntax: Vite
+ * leaves the raw percent-wrapped token in place when the variable is not
+ * defined in the build environment, and vite-plugin-pwa then fails with
+ * "URI malformed" while resolving the canonical / Open Graph URLs.
+ * Substituting here keeps the build green with or without env configuration.
  */
 function htmlSiteUrl(): Plugin {
   const siteUrl = resolveSiteUrl();
@@ -32,7 +34,7 @@ function htmlSiteUrl(): Plugin {
     name: 'html-site-url',
     transformIndexHtml: {
       order: 'pre',
-      handler: (html) => html.replaceAll('%VITE_SITE_URL%', siteUrl),
+      handler: (html) => html.replaceAll('__SITE_URL__', siteUrl),
     },
   };
 }
