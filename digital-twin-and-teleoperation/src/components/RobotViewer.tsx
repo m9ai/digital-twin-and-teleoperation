@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createURDFScene, createFallbackScene, type SceneHandles } from '@/lib/urdfScene';
 import { useRobotStore } from '@/store/robotStore';
+import { useURDFStore } from '@/store/urdfStore';
 import { Maximize2, RotateCcw } from 'lucide-react';
 
 export function RobotViewer() {
@@ -9,15 +10,17 @@ export function RobotViewer() {
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const { jointState } = useRobotStore();
+  const { blobUrl } = useURDFStore();
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container || !blobUrl) return;
 
     let mounted = true;
-    const urdfUrl = '/assets/industrial-5axis-arm.urdf';
+    setLoaded(false);
+    setError(null);
 
-    createURDFScene(container, urdfUrl)
+    createURDFScene(container, blobUrl)
       .then((handles) => {
         if (!mounted) {
           handles.dispose();
@@ -57,7 +60,7 @@ export function RobotViewer() {
       sceneRef.current?.dispose();
       sceneRef.current = null;
     };
-  }, []);
+  }, [blobUrl]);
 
   useEffect(() => {
     if (sceneRef.current && jointState.name.length > 0) {

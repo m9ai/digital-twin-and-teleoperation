@@ -5,6 +5,7 @@ import { ControlDesk } from './components/ControlDesk';
 import { VideoStream } from './components/VideoStream';
 import { PointCloud } from './components/PointCloud';
 import { ConnectionBar } from './components/ConnectionBar';
+import { URDFUploadPanel } from './components/URDFUploadPanel';
 import { useROS } from './hooks/useROS';
 import { useHeartbeat } from './hooks/useHeartbeat';
 
@@ -23,6 +24,7 @@ function App() {
             <PointCloud />
           </div>
           <div className="flex flex-col gap-4 min-h-0">
+            <URDFUploadPanel />
             <VideoStream />
             <TelemetryPanel />
             <ControlDesk />

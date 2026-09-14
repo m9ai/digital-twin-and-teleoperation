@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import URDFLoader from 'urdf-loader';
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
+import { ColladaLoader } from 'three/examples/jsm/loaders/ColladaLoader.js';
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { getMeshFormatForBlobUrl } from '@/lib/urdfMeshResolver';
 import type { JointState } from '@/types';
 
 export interface SceneHandles {
@@ -12,6 +17,36 @@ export interface SceneHandles {
   applyJointState: (state: JointState) => void;
   dispose: () => void;
   resize: () => void;
+}
+
+function createDefaultPBRMaterial(): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    color: 0xc0c5c9,
+    roughness: 0.4,
+    metalness: 0.3,
+  });
+}
+
+function ensurePBRMaterial(material: THREE.Material): THREE.MeshStandardMaterial {
+  if (material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshPhysicalMaterial) {
+    return material;
+  }
+
+  const pbr = createDefaultPBRMaterial();
+
+  if ('color' in material && material.color instanceof THREE.Color) {
+    pbr.color.copy(material.color);
+  }
+  if ('map' in material && material.map instanceof THREE.Texture) {
+    pbr.map = material.map;
+  }
+  if ('transparent' in material && typeof material.transparent === 'boolean') {
+    pbr.transparent = material.transparent;
+    pbr.opacity = 'opacity' in material && typeof material.opacity === 'number' ? material.opacity : 1;
+  }
+
+  material.dispose();
+  return pbr;
 }
 
 export function createURDFScene(container: HTMLElement, urdfUrl: string): Promise<SceneHandles> {
@@ -35,13 +70,20 @@ export function createURDFScene(container: HTMLElement, urdfUrl: string): Promis
   controls.dampingFactor = 0.05;
   controls.target.set(0, 0.5, 0);
 
-  const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+  const ambient = new THREE.AmbientLight(0xffffff, 0.4);
   scene.add(ambient);
 
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+  const hemisphere = new THREE.HemisphereLight(0xdbeafe, 0x1e293b, 0.8);
+  scene.add(hemisphere);
+
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
   dirLight.position.set(3, 5, 3);
   dirLight.castShadow = true;
   scene.add(dirLight);
+
+  const fillLight = new THREE.DirectionalLight(0xa5f3fc, 0.6);
+  fillLight.position.set(-3, 2, -3);
+  scene.add(fillLight);
 
   const grid = new THREE.GridHelper(10, 50, 0x334155, 0x1e293b);
   scene.add(grid);
@@ -52,36 +94,122 @@ export function createURDFScene(container: HTMLElement, urdfUrl: string): Promis
   let robot: THREE.Object3D | null = null;
   let animationId: number;
 
-  const loader = new URDFLoader();
-  loader.packages = {
-    'robot_description': '/assets',
+  const loader = new URDFLoader() as unknown as {
+    loadMeshCb: (
+      path: string,
+      manager: THREE.LoadingManager,
+      done: (mesh: THREE.Object3D | null, err?: unknown) => void
+    ) => void;
+  };
+  loader.loadMeshCb = (path, manager, done) => {
+    const format = getMeshFormatForBlobUrl(path);
+    const lowerPath = path.toLowerCase();
+
+    if (format === 'stl' || lowerPath.endsWith('.stl')) {
+      const stlLoader = new STLLoader(manager);
+      stlLoader.load(
+        path,
+        (geom) => {
+          // STL from some CAD exporters lacks smooth vertex normals.
+          geom.computeVertexNormals();
+
+          const material = new THREE.MeshStandardMaterial({
+            color: 0x8899a6,
+            roughness: 0.4,
+            metalness: 0.5,
+          });
+          done(new THREE.Mesh(geom, material));
+        },
+        undefined,
+        (err) => done(null, err)
+      );
+    } else if (format === 'gltf' || lowerPath.endsWith('.glb') || lowerPath.endsWith('.gltf')) {
+      const gltfLoader = new GLTFLoader(manager);
+      gltfLoader.load(
+        path,
+        (gltf) => done(gltf.scene),
+        undefined,
+        (err) => done(null, err)
+      );
+    } else if (format === 'dae' || lowerPath.endsWith('.dae')) {
+      const daeLoader = new ColladaLoader(manager);
+      daeLoader.load(
+        path,
+        (dae) => done(dae.scene),
+        undefined,
+        (err) => done(null, err)
+      );
+    } else if (format === 'obj' || lowerPath.endsWith('.obj')) {
+      const objLoader = new OBJLoader(manager);
+      objLoader.load(
+        path,
+        (obj) => done(obj),
+        undefined,
+        (err) => done(null, err)
+      );
+    } else {
+      console.warn(`URDFLoader: Could not load model at ${path}.\nNo loader available`);
+      done(null);
+    }
   };
 
   return new Promise((resolve, reject) => {
-    loader.load(
-      urdfUrl,
-      (result: THREE.Object3D) => {
-        robot = result;
+    fetch(urdfUrl)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Failed to load URDF: ${res.status} ${res.statusText}`);
+        return res.text();
+      })
+      .then((urdfText) => {
+        // Pass an empty working path so mesh filenames that are already
+        // absolute blob URLs are not prepended with the URDF base URL.
+        const parsed = (loader as unknown as { parse: (text: string, path: string) => THREE.Object3D }).parse(urdfText, '');
+        robot = parsed;
         robot.scale.set(1, 1, 1);
+
+        // ROS URDF uses Z-up; Three.js uses Y-up. Rotate the root so the
+        // robot stands upright in the Three.js scene.
+        robot.rotation.x = -Math.PI / 2;
+
         robot.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) {
             const mesh = child as THREE.Mesh;
             mesh.castShadow = true;
             mesh.receiveShadow = true;
+
+            // Ensure PBR fallback for missing or non-PBR materials.
+            const current = mesh.material;
+            if (Array.isArray(current)) {
+              mesh.material = current.map((m) => ensurePBRMaterial(m));
+            } else if (current) {
+              mesh.material = ensurePBRMaterial(current);
+            } else {
+              mesh.material = createDefaultPBRMaterial();
+            }
           }
         });
         scene.add(robot);
 
+        // Force initial matrix computation now that transforms are set.
+        robot.updateMatrix();
+        robot.updateMatrixWorld(true);
+
         const applyJointState = (state: JointState) => {
           if (!robot) return;
-          const urdfRobot = robot as unknown as { joints: Record<string, { setJointValue: (...values: number[]) => void }> };
+          const urdfRobot = robot as unknown as {
+            joints: Record<string, { setJointValue: (...values: number[]) => void }>;
+          };
+          let changed = false;
           state.name.forEach((jointName, index) => {
             const joint = urdfRobot.joints?.[jointName];
             if (joint && typeof joint.setJointValue === 'function') {
               const value = state.position[index] ?? 0;
               joint.setJointValue(value);
+              changed = true;
             }
           });
+          if (changed) {
+            robot.updateMatrixWorld(true);
+          }
         };
 
         const animate = () => {
@@ -109,10 +237,8 @@ export function createURDFScene(container: HTMLElement, urdfUrl: string): Promis
         };
 
         resolve({ scene, camera, renderer, controls, robot, applyJointState, dispose, resize });
-      },
-      undefined,
-      (err: unknown) => reject(err)
-    );
+      })
+      .catch((err: unknown) => reject(err));
   });
 }
 

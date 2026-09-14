@@ -43,6 +43,28 @@ ros2 launch webrtc_ros webrtc_ros_launch.xml
 ros2 topic pub /joint_states sensor_msgs/JointState "{name: ['base_link_to_link1','link1_to_link2','link2_to_link3'], position: [0.2,0.3,0.05]}"
 ```
 
+## 生产环境 URDF / Mesh 优化建议
+
+为在浏览器中长期稳定运行复杂人形机器人（30+ 关节、数十个 mesh），建议做以下工程化优化：
+
+1. **离线格式转换（STL → GLB）**
+   - STL 是原始且冗余的格式，不含材质与层级。
+   - 在 CI/CD 中用 Python + Open3D / Blender CLI 批量将 `.stl` 转为 `.glb`（GLTF 二进制）。
+   - GLB 体积通常减少 60%~80%，天然支持 DRACO 几何压缩与 PBR 材质。
+   - 本前端已支持直接上传 `.glb` / `.gltf` 作为 URDF mesh 资源。
+
+2. **DRACO 压缩**
+   - 对 GLB 启用 Draco 压缩可进一步降低传输与显存占用。
+   - 如需支持 Draco GLB，可在 `src/lib/urdfScene.ts` 中为 `GLTFLoader` 注入 `DRACOLoader`。
+
+3. **LOD（细节层次）**
+   - 对远离相机的 link 使用降采样 mesh，减少三角面片数量。
+   - 可在离线转换阶段生成多档 LOD 模型，运行时按距离切换。
+
+4. **渲染性能**
+   - 已默认对机器人节点关闭 `matrixAutoUpdate`，仅在 `/joint_states` 更新关节角度后重新计算世界矩阵。
+   - 避免在动画循环中每帧遍历整棵树。
+
 ## 目录结构
 
 ```
