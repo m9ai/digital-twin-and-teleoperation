@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import { withModelPath } from '@/lib/directoryReader';
 
 export interface ParsedZipPackage {
   urdfText: string;
@@ -43,7 +44,10 @@ export async function parseURDFZip(zipFile: File): Promise<ParsedZipPackage> {
           else if (lower.endsWith('.obj')) mime = 'text/plain';
           else if (lower.endsWith('.glb')) mime = 'model/gltf-binary';
           else if (lower.endsWith('.gltf')) mime = 'model/gltf+json';
-          meshFiles.push(new File([buffer], basename, { type: mime }));
+          // Keep the archive-relative path so mesh references can be matched
+          // against the packaged folder layout, not just the file name.
+          const file = new File([buffer], basename, { type: mime });
+          meshFiles.push(withModelPath(file, entry.name));
         })
       );
     }

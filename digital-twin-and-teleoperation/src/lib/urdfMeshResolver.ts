@@ -6,6 +6,8 @@
  * files the user uploaded, create blob URLs for them, and rewrite the URDF.
  */
 
+import { getModelPath, normalizePath } from '@/lib/directoryReader';
+
 export type MeshFormat = 'stl' | 'dae' | 'obj' | 'gltf';
 
 export interface MeshReference {
@@ -47,18 +49,41 @@ export function extractMeshReferences(urdfText: string): MeshReference[] {
 
   while ((match = MESH_REF_REGEX.exec(urdfText)) !== null) {
     const raw = match[1];
-    const parts = raw.replace(/^package:\/\//, '').split('/');
-    const packageName = parts[0] ?? '';
-    const relativePath = parts.slice(1).join('/');
+    const isPackageUrl = raw.startsWith('package://');
+    const parts = normalizePath(raw.replace(/^package:\/\//, ''))
+      .split('/')
+      .filter(Boolean);
     const basename = parts[parts.length - 1] ?? '';
+    const packageName = isPackageUrl ? parts[0] ?? '' : '';
+    // For `package://pkg/...` the package name is not part of the on-disk
+    // layout; for plain relative paths the whole thing is.
+    const relativePath = (isPackageUrl ? parts.slice(1) : parts).join('/');
     refs.push({ raw, packageName, relativePath, basename });
   }
 
   return refs;
 }
 
-function findMatchingFile(basename: string, files: File[]): File | undefined {
-  return files.find((f) => f.name.toLowerCase() === basename.toLowerCase());
+/**
+ * Match an URDF reference against the uploaded files.
+ *
+ * Folder uploads keep their layout, so a reference such as
+ * `package://humanoid/meshes/hip_left.STL` should first be matched against the
+ * upload-relative path (`meshes/hip_left.STL`) and only fall back to a plain
+ * basename match when the layout does not disambiguate.
+ */
+function findMatchingFile(ref: MeshReference, files: File[]): File | undefined {
+  const refPath = normalizePath(ref.relativePath).toLowerCase();
+  if (refPath) {
+    const byPath = files.find((file) => {
+      const path = getModelPath(file).toLowerCase();
+      return path === refPath || path.endsWith(`/${refPath}`);
+    });
+    if (byPath) return byPath;
+  }
+
+  const basename = ref.basename.toLowerCase();
+  return files.find((file) => file.name.toLowerCase() === basename);
 }
 
 /** Identity of an uploaded mesh file, stable across browser sessions. */
@@ -85,7 +110,7 @@ export function resolveMeshReferences(
   const blobMap = new Map<string, string>();
 
   for (const ref of refs) {
-    const file = findMatchingFile(ref.basename, meshFiles);
+    const file = findMatchingFile(ref, meshFiles);
     if (file) {
       const blobUrl = URL.createObjectURL(file);
       const format = detectFormat(ref.basename);

@@ -200,7 +200,57 @@ export function createURDFScene(
       done: (mesh: THREE.Object3D | null, err?: unknown) => void
     ) => void;
   };
-  loader.loadMeshCb = (path, manager, done) => loadRobotMesh(path, manager, done);
+
+  // Mesh loading happens asynchronously after `loader.parse()` returns. We
+  // track outstanding loads so the initial camera framing is computed once all
+  // geometry is actually present, otherwise the bounding box is too small and
+  // the robot appears oversized / clipped.
+  let pendingMeshes = 0;
+  let hasFramed = false;
+
+  const settleRobotOnGround = () => {
+    if (!robot) return;
+    // Ensure every asynchronously loaded mesh has contributed to the world
+    // matrices before measuring the lowest point.
+    robot.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(robot);
+    if (box.isEmpty()) return;
+    // In Three.js y = 0 is the ground plane. Many URDFs (especially humanoids)
+    // define base_link above the feet, so after the Z-up -> Y-up rotation the
+    // lowest point ends up below y = 0. Shift the root so the model rests on
+    // the ground without changing its horizontal placement.
+    // A visible epsilon keeps the soles clearly above generated floor planes
+    // and avoids z-fighting with the ground grid.
+    const GROUND_EPSILON = 0.01;
+    if (box.min.y < GROUND_EPSILON) {
+      robot.position.y += GROUND_EPSILON - box.min.y;
+      robot.updateMatrixWorld(true);
+    }
+  };
+
+  const applyInitialFraming = () => {
+    if (!hasFramed && runtime) {
+      hasFramed = true;
+      settleRobotOnGround();
+      runtime.applyCameraPreset('perspective', false);
+      // Some URDFLoader mesh attachment happens just before the next render,
+      // so re-measure once more after one frame to catch any remaining ground
+      // penetration and re-frame the camera on the final bounds.
+      requestAnimationFrame(() => {
+        settleRobotOnGround();
+        runtime?.applyCameraPreset('perspective', false);
+      });
+    }
+  };
+
+  loader.loadMeshCb = (path, manager, done) => {
+    pendingMeshes += 1;
+    loadRobotMesh(path, manager, (mesh, err) => {
+      done(mesh, err);
+      pendingMeshes -= 1;
+      if (pendingMeshes === 0) applyInitialFraming();
+    });
+  };
 
   return new Promise((resolve, reject) => {
     fetch(urdfUrl)
@@ -321,6 +371,10 @@ export function createURDFScene(
           onPoseChange: options.onPoseChange,
         });
         runtime.start();
+        // Defer the initial framing until every asynchronous mesh has been
+        // loaded, otherwise the bounding box is too small and the camera ends
+        // up zoomed in too far. For mesh-less URDFs this fires immediately.
+        if (pendingMeshes === 0) applyInitialFraming();
 
         const dispose = () => {
           runtime?.dispose();
@@ -569,6 +623,8 @@ export function createFallbackScene(
     onPoseChange: options.onPoseChange,
   });
   runtime.start();
+  // Same initial framing for the procedural fallback model.
+  runtime.applyCameraPreset('perspective', false);
 
   return {
     scene,

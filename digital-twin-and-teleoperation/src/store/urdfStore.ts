@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { resolveMeshReferences } from '@/lib/urdfMeshResolver';
 import { parseJointDefinitions } from '@/lib/urdfJoints';
+import { getModelPath, mergeModelFiles } from '@/lib/directoryReader';
 import type { MeshReference } from '@/lib/urdfMeshResolver';
 import type { URDFJointDefinition } from '@/lib/urdfJoints';
 
@@ -18,7 +19,8 @@ export interface URDFState {
   joints: URDFJointDefinition[];
   setURDF: (fileName: string, text: string, initialMeshFiles?: File[]) => void;
   addMeshFiles: (files: File[]) => void;
-  removeMeshFile: (name: string) => void;
+  /** `identifier` is the upload-relative path, or the bare file name. */
+  removeMeshFile: (identifier: string) => void;
   setError: (error: string | null) => void;
   setLoading: (loading: boolean) => void;
   /** Fetch the bundled demo URDF so its joints become editable / jogglable. */
@@ -76,27 +78,18 @@ export const useURDFStore = create<URDFState>((set, get) => ({
     set((prev) => applyURDF(prev, fileName, text, initialMeshFiles)),
   addMeshFiles: (files) =>
     set((prev) => {
+      const merged = mergeModelFiles(prev.meshFiles, files);
       if (!prev.urdfText) {
         // If no URDF yet, just accumulate mesh files.
-        const merged = [...prev.meshFiles];
-        for (const f of files) {
-          if (!merged.some((m) => m.name.toLowerCase() === f.name.toLowerCase())) {
-            merged.push(f);
-          }
-        }
         return { meshFiles: merged };
-      }
-      const merged = [...prev.meshFiles];
-      for (const f of files) {
-        if (!merged.some((m) => m.name.toLowerCase() === f.name.toLowerCase())) {
-          merged.push(f);
-        }
       }
       return applyURDF(prev, prev.fileName ?? 'robot.urdf', prev.urdfText, merged);
     }),
-  removeMeshFile: (name) =>
+  removeMeshFile: (identifier) =>
     set((prev) => {
-      const merged = prev.meshFiles.filter((m) => m.name !== name);
+      const merged = prev.meshFiles.filter(
+        (file) => file.name !== identifier && getModelPath(file) !== identifier
+      );
       if (!prev.urdfText) return { meshFiles: merged };
       return applyURDF(prev, prev.fileName ?? 'robot.urdf', prev.urdfText, merged);
     }),
