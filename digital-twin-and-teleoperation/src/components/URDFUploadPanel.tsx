@@ -21,11 +21,13 @@ import {
   filesFromDataTransfer,
   filesFromFileList,
   getModelPath,
+  inferRootName,
   isMeshFile,
   isURDFFile,
+  isXacroFile,
   isZipFile,
-  mergeModelFiles,
 } from '@/lib/directoryReader';
+import type { ModelSource } from '@/store/urdfStore';
 
 /**
  * Directory upload attributes.
@@ -39,43 +41,19 @@ const DIRECTORY_INPUT_PROPS = {
 
 const FILE_ACCEPT = '.urdf,.xacro,.zip,.stl,.dae,.obj,.glb,.gltf';
 
-const isXacroFile = (name: string) => name.toLowerCase().endsWith('.xacro');
+type FileKind = 'urdf' | 'xacro' | 'mesh' | 'other';
 
-/**
- * Which file is the entry point of the uploaded model set.
- *
- * A generated `.urdf` is preferred over a `.xacro` because it needs no macro
- * expansion; within one kind the shallowest path wins so that
- * `robot.xacro` beats `urdf/robot.xacro` in nested package layouts.
- */
-function pickModelFile(files: File[]): File | undefined {
-  const depth = (file: File) => getModelPath(file).split('/').length;
-  return [...files].sort((a, b) => {
-    const aIsUrdf = !isXacroFile(a.name);
-    const bIsUrdf = !isXacroFile(b.name);
-    if (aIsUrdf !== bIsUrdf) return aIsUrdf ? -1 : 1;
-    return depth(a) - depth(b);
-  })[0];
-}
-
-/** Read the sibling xacro files used to resolve `<xacro:include>`. */
-async function readSources(files: File[]): Promise<Record<string, string>> {
-  const sources: Record<string, string> = {};
-  await Promise.all(
-    files.map(async (file) => {
-      try {
-        sources[getModelPath(file)] = await file.text();
-      } catch {
-        // An unreadable sibling only costs us one include target.
-      }
-    })
-  );
-  return sources;
+function kindOf(file: File): FileKind {
+  if (isXacroFile(file.name)) return 'xacro';
+  if (isURDFFile(file.name)) return 'urdf';
+  if (isMeshFile(file.name)) return 'mesh';
+  return 'other';
 }
 
 interface FileLeaf {
   name: string;
   path: string;
+  kind: FileKind;
 }
 
 interface DirectoryNode {
@@ -85,7 +63,7 @@ interface DirectoryNode {
   files: FileLeaf[];
 }
 
-/** Nest uploaded files by their upload-relative path so the tree mirrors disk. */
+/** Nest the files of one source by their relative path so the tree mirrors disk. */
 function buildFileTree(files: File[]): DirectoryNode {
   const root: DirectoryNode = { name: '', path: '', dirs: [], files: [] };
 
@@ -108,7 +86,11 @@ function buildFileTree(files: File[]): DirectoryNode {
       cursor = dir;
     }
 
-    cursor.files.push({ name: fileName, path: [...segments, fileName].join('/') });
+    cursor.files.push({
+      name: fileName,
+      path: [...segments, fileName].join('/'),
+      kind: kindOf(file),
+    });
   }
 
   return root;
@@ -121,23 +103,48 @@ function countFiles(node: DirectoryNode): number {
 function FileLeafRow({
   leaf,
   depth,
+  isEntry,
+  sourceId,
   onRemove,
+  onSelect,
 }: {
   leaf: FileLeaf;
   depth: number;
-  onRemove: (path: string) => void;
+  isEntry: boolean;
+  sourceId: string;
+  onRemove: (sourceId: string, path: string) => void;
+  onSelect: (sourceId: string, path: string) => void;
 }) {
+  const Icon = leaf.kind === 'mesh' ? Box : leaf.kind === 'other' ? FileCode2 : FileText;
+  const selectable = !isEntry && (leaf.kind === 'urdf' || leaf.kind === 'xacro');
+
   return (
     <div
-      className="group flex items-center gap-1.5 rounded py-0.5 pr-1 text-slate-400 hover:bg-slate-700/50"
+      className={`group flex items-center gap-1.5 rounded py-0.5 pr-1 ${
+        isEntry ? 'text-cyan-300' : 'text-slate-400'
+      } hover:bg-slate-700/50`}
       style={{ paddingLeft: depth * 12 + 6 }}
     >
-      <FileCode2 className="h-3 w-3 shrink-0 text-slate-500" />
+      <Icon className={`h-3 w-3 shrink-0 ${isEntry ? 'text-cyan-400' : 'text-slate-500'}`} />
       <span className="truncate" title={leaf.path}>
         {leaf.name}
       </span>
+      {isEntry && (
+        <span className="shrink-0 rounded bg-cyan-500/15 px-1 py-px text-[10px] text-cyan-300 ring-1 ring-cyan-500/30">
+          入口
+        </span>
+      )}
+      {selectable && (
+        <button
+          onClick={() => onSelect(sourceId, leaf.path)}
+          className="shrink-0 text-[10px] text-slate-600 opacity-0 transition-opacity hover:text-cyan-300 group-hover:opacity-100"
+          title="将该模型渲染到数字孪生"
+        >
+          设为当前
+        </button>
+      )}
       <button
-        onClick={() => onRemove(leaf.path)}
+        onClick={() => onRemove(sourceId, leaf.path)}
         className="ml-auto shrink-0 text-slate-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
         title="移除"
       >
@@ -150,11 +157,17 @@ function FileLeafRow({
 function DirectoryRow({
   node,
   depth,
+  sourceId,
+  entryPath,
   onRemove,
+  onSelect,
 }: {
   node: DirectoryNode;
   depth: number;
-  onRemove: (path: string) => void;
+  sourceId: string;
+  entryPath: string | null;
+  onRemove: (sourceId: string, path: string) => void;
+  onSelect: (sourceId: string, path: string) => void;
 }) {
   const [open, setOpen] = useState(true);
 
@@ -170,7 +183,7 @@ function DirectoryRow({
         ) : (
           <ChevronRight className="h-3 w-3 shrink-0 text-slate-500" />
         )}
-        <FolderTree className="h-3 w-3 shrink-0 text-cyan-500/80" />
+        <FolderTree className="h-3 w-3 shrink-0 text-slate-500" />
         <span className="truncate">{node.name}</span>
         <span className="ml-auto shrink-0 text-[10px] text-slate-600">{countFiles(node)}</span>
       </button>
@@ -178,10 +191,114 @@ function DirectoryRow({
       {open && (
         <>
           {node.dirs.map((dir) => (
-            <DirectoryRow key={dir.path} node={dir} depth={depth + 1} onRemove={onRemove} />
+            <DirectoryRow
+              key={dir.path}
+              node={dir}
+              depth={depth + 1}
+              sourceId={sourceId}
+              entryPath={entryPath}
+              onRemove={onRemove}
+              onSelect={onSelect}
+            />
           ))}
           {node.files.map((leaf) => (
-            <FileLeafRow key={leaf.path} leaf={leaf} depth={depth + 1} onRemove={onRemove} />
+            <FileLeafRow
+              key={leaf.path}
+              leaf={leaf}
+              depth={depth + 1}
+              isEntry={leaf.path === entryPath}
+              sourceId={sourceId}
+              onRemove={onRemove}
+              onSelect={onSelect}
+            />
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * One imported folder, rendered as the tree the user picked on disk.
+ *
+ * Every source keeps its own entry URDF so that the panel can already switch
+ * between robots — the scene will follow once the twin renders more than one.
+ */
+function SourceRow({
+  source,
+  active,
+  onRemoveSource,
+  onRemoveFile,
+  onSelectEntry,
+}: {
+  source: ModelSource;
+  active: boolean;
+  onRemoveSource: (sourceId: string) => void;
+  onRemoveFile: (sourceId: string, path: string) => void;
+  onSelectEntry: (sourceId: string, path: string) => void;
+}) {
+  const [open, setOpen] = useState(true);
+  const tree = useMemo(() => buildFileTree(source.files), [source.files]);
+
+  return (
+    <div className="mb-0.5">
+      <div className="group flex items-center gap-1.5 rounded py-0.5 pr-1 text-slate-200 hover:bg-slate-700/50">
+        <button
+          onClick={() => setOpen((value) => !value)}
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+        >
+          {open ? (
+            <ChevronDown className="h-3 w-3 shrink-0 text-slate-500" />
+          ) : (
+            <ChevronRight className="h-3 w-3 shrink-0 text-slate-500" />
+          )}
+          <FolderOpen className={`h-3 w-3 shrink-0 ${active ? 'text-cyan-400' : 'text-slate-500'}`} />
+          <span className="truncate" title={source.name}>
+            {source.name}
+          </span>
+          <span className="shrink-0 text-[10px] text-slate-600">{source.files.length}</span>
+        </button>
+
+        {active ? (
+          <span className="shrink-0 rounded bg-cyan-500/15 px-1 py-px text-[10px] text-cyan-300 ring-1 ring-cyan-500/30">
+            渲染中
+          </span>
+        ) : (
+          <span className="shrink-0 text-[10px] text-slate-600">未渲染</span>
+        )}
+
+        <button
+          onClick={() => onRemoveSource(source.id)}
+          className="shrink-0 text-slate-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+          title="移除整个文件夹"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+
+      {open && (
+        <>
+          {tree.dirs.map((dir) => (
+            <DirectoryRow
+              key={dir.path}
+              node={dir}
+              depth={1}
+              sourceId={source.id}
+              entryPath={source.entryPath}
+              onRemove={onRemoveFile}
+              onSelect={onSelectEntry}
+            />
+          ))}
+          {tree.files.map((leaf) => (
+            <FileLeafRow
+              key={leaf.path}
+              leaf={leaf}
+              depth={1}
+              isEntry={leaf.path === source.entryPath}
+              sourceId={source.id}
+              onRemove={onRemoveFile}
+              onSelect={onSelectEntry}
+            />
           ))}
         </>
       )}
@@ -207,24 +324,31 @@ export function URDFUploadPanel() {
     fileName,
     error,
     isLoading,
-    meshFiles,
+    sources,
+    activeSourceId,
     resolvedMeshes,
     missingMeshes,
     unresolvedReplaced,
     xacroExpanded,
     xacroWarnings,
-    setURDF,
-    addMeshFiles,
-    removeMeshFile,
+    loadModelFiles,
+    addModelSource,
+    setActiveModelFile,
+    removeModelSource,
+    removeModelFile,
     setError,
     setLoading,
     reset,
   } = useURDFStore();
 
+  const activeSource = sources.find((source) => source.id === activeSourceId);
+
   /**
    * Single entry point for every load path (drop, file picker, folder picker).
-   * Archives win, then the shallowest model is used so a folder with a nested
-   * `urdf/` sub-directory still resolves to the top-level description.
+   *
+   * The selection is registered as one model source so the panel shows the
+   * folder the user actually picked; the entry URDF inside it is what gets
+   * rendered.
    */
   const loadFiles = useCallback(
     async (incoming: File[]) => {
@@ -236,51 +360,26 @@ export function URDFUploadPanel() {
       try {
         const archive = incoming.find((file) => isZipFile(file.name));
         if (archive) {
-          const {
-            urdfText,
-            urdfFileName,
-            meshFiles: archivedMeshes,
+          // An archive is already a folder, just compressed: unpack it into the
+          // same source shape so both paths look identical downstream.
+          const { files, entryPath, urdfText, xacroSources } = await parseURDFZip(archive);
+          const name = inferRootName(files) ?? archive.name.replace(/\.zip$/i, '');
+          addModelSource(name, files, {
+            entryPath,
+            entryText: urdfText,
             xacroSources,
-          } = await parseURDFZip(archive);
-          setURDF(urdfFileName, urdfText, archivedMeshes, xacroSources);
+          });
           return;
         }
 
-        const meshes = incoming.filter((file) => isMeshFile(file.name));
-        const models = incoming.filter((file) => isURDFFile(file.name));
-        const urdf = pickModelFile(models);
-
-        if (!urdf) {
-          if (meshes.length === 0) {
-            throw new Error('未找到 .urdf / .xacro / .zip 模型文件或 STL/DAE/OBJ/GLB 网格资源');
-          }
-          addMeshFiles(meshes);
-          return;
-        }
-
-        const text = await urdf.text();
-        if (!/<robot[\s>]/.test(text)) {
-          throw new Error(`${urdf.name} 内容不是有效的 URDF/XML`);
-        }
-
-        // A xacro almost always splits its macros across sibling files, so
-        // every other `.xacro` in the selection is collected as a candidate
-        // for `<xacro:include>` before expansion starts.
-        const xacroSources = await readSources(
-          models.filter((file) => file !== urdf && isXacroFile(file.name))
-        );
-
-        // Keep meshes loaded in earlier passes so a folder and its meshes can
-        // be added in separate steps.
-        const merged = mergeModelFiles(useURDFStore.getState().meshFiles, meshes);
-        setURDF(urdf.name, text, merged, xacroSources);
+        await loadModelFiles(incoming);
       } catch (err) {
         setError(err instanceof Error ? err.message : '加载模型失败');
       } finally {
         setLoading(false);
       }
     },
-    [addMeshFiles, setError, setLoading, setURDF]
+    [addModelSource, loadModelFiles, setError, setLoading]
   );
 
   const handleInputChange = useCallback(
@@ -302,8 +401,6 @@ export function URDFUploadPanel() {
     },
     [loadFiles]
   );
-
-  const tree = useMemo(() => buildFileTree(meshFiles), [meshFiles]);
 
   return (
     <div className="panel flex flex-col gap-3">
@@ -381,7 +478,7 @@ export function URDFUploadPanel() {
             </div>
 
             <div className="text-[10px] leading-4 text-slate-600">
-              支持 .urdf / .xacro / .zip 及 .stl .dae .obj .glb .gltf 网格
+              支持 .urdf / .xacro / .zip 及 .stl .dae .obj .glb .gltf 网格 · 可多次加载不同文件夹
             </div>
 
             <input
@@ -405,7 +502,17 @@ export function URDFUploadPanel() {
             <div className="flex items-center justify-between rounded-lg bg-slate-800/60 px-3 py-2 text-xs">
               <div className="flex min-w-0 items-center gap-2 truncate text-slate-300">
                 <FileText className="h-3.5 w-3.5 shrink-0 text-cyan-400" />
-                <span className="truncate">{fileName}</span>
+                {activeSource && (
+                  <span
+                    className="shrink-0 rounded bg-slate-700 px-1.5 py-0.5 text-[10px] text-slate-400"
+                    title={activeSource.name}
+                  >
+                    {activeSource.name}
+                  </span>
+                )}
+                <span className="truncate" title={activeSource?.entryPath ?? fileName}>
+                  {fileName}
+                </span>
                 {xacroExpanded && (
                   <span
                     className="shrink-0 rounded bg-violet-500/20 px-1.5 py-0.5 text-[10px] text-violet-300 ring-1 ring-violet-500/30"
@@ -428,14 +535,23 @@ export function URDFUploadPanel() {
             </div>
           )}
 
-          {meshFiles.length > 0 && (
-            <div className="max-h-48 overflow-y-auto rounded-lg bg-slate-800/40 px-2 py-2 text-xs">
-              <div className="mb-1 px-1 text-slate-500">已加载资源（{meshFiles.length}）</div>
-              {tree.dirs.map((dir) => (
-                <DirectoryRow key={dir.path} node={dir} depth={0} onRemove={removeMeshFile} />
-              ))}
-              {tree.files.map((leaf) => (
-                <FileLeafRow key={leaf.path} leaf={leaf} depth={0} onRemove={removeMeshFile} />
+          {sources.length > 0 && (
+            <div className="max-h-64 overflow-y-auto rounded-lg bg-slate-800/40 px-2 py-2 text-xs">
+              <div className="mb-1 flex items-center justify-between px-1 text-slate-500">
+                <span>已加载文件夹（{sources.length}）</span>
+                <span>
+                  共 {sources.reduce((total, source) => total + source.files.length, 0)} 个文件
+                </span>
+              </div>
+              {sources.map((source) => (
+                <SourceRow
+                  key={source.id}
+                  source={source}
+                  active={source.id === activeSourceId}
+                  onRemoveSource={removeModelSource}
+                  onRemoveFile={removeModelFile}
+                  onSelectEntry={setActiveModelFile}
+                />
               ))}
             </div>
           )}

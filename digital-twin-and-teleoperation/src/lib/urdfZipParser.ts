@@ -1,9 +1,14 @@
 import JSZip from 'jszip';
-import { withModelPath } from '@/lib/directoryReader';
+import { normalizePath, withModelPath } from '@/lib/directoryReader';
 
 export interface ParsedZipPackage {
   urdfText: string;
   urdfFileName: string;
+  /** Path of the description inside the archive, e.g. `robot/robot.urdf`. */
+  entryPath: string;
+  /** Every model file of the archive — descriptions and meshes — so the panel
+   * can show the packaged tree instead of only the meshes. */
+  files: File[];
   meshFiles: File[];
   /**
    * Text of every `.xacro` in the archive, keyed by its archive-relative path.
@@ -87,5 +92,19 @@ export async function parseURDFZip(zipFile: File): Promise<ParsedZipPackage> {
 
   await Promise.all(pending);
 
-  return { urdfText, urdfFileName, meshFiles, xacroSources };
+  // Descriptions are turned back into files (they were already read as text)
+  // purely so the panel can render the archive as the folder it represents.
+  const entryPath = normalizePath(modelEntry.name);
+  const files: File[] = [
+    withModelPath(new File([urdfText], urdfFileName, { type: 'application/xml' }), entryPath),
+    ...Object.entries(xacroSources).map(([path, text]) =>
+      withModelPath(
+        new File([text], path.split('/').pop() ?? path, { type: 'application/xml' }),
+        path
+      )
+    ),
+    ...meshFiles,
+  ];
+
+  return { urdfText, urdfFileName, entryPath, files, meshFiles, xacroSources };
 }

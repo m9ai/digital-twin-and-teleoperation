@@ -39,7 +39,26 @@ export function hasExtension(name: string, extensions: string[]): boolean {
 export const isURDFFile = (name: string) => hasExtension(name, URDF_EXTENSIONS);
 export const isMeshFile = (name: string) => hasExtension(name, MESH_EXTENSIONS);
 export const isZipFile = (name: string) => hasExtension(name, ZIP_EXTENSIONS);
+export const isXacroFile = (name: string) => hasExtension(name, URDF_EXTENSIONS) && name.toLowerCase().endsWith('.xacro');
 export const isModelFile = (name: string) => hasExtension(name, MODEL_EXTENSIONS);
+
+/**
+ * Shared top-level folder of an upload, e.g. `humanoid` for
+ * `humanoid/meshes/hip_left.STL`.
+ *
+ * Returns `null` when the selection has no common root — files picked one by
+ * one, or a mix of folders — so the caller can fall back to another label.
+ */
+export function inferRootName(files: File[]): string | null {
+  let root: string | null = null;
+  for (const file of files) {
+    const [first, ...rest] = getModelPath(file).split('/');
+    if (rest.length === 0) return null;
+    if (root === null) root = first;
+    else if (root !== first) return null;
+  }
+  return root;
+}
 
 /** Path of an uploaded file relative to the upload root. */
 export function getModelPath(file: File): string {
