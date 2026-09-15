@@ -21,7 +21,7 @@
           - generic [ref=e30]:
             - generic [ref=e31]:
               - img [ref=e32]
-              - generic [ref=e37]: Digital Twin (URDF / Three.js)
+              - generic [ref=e37]: Digital Twin
             - button "Reset camera" [ref=e43] [cursor=pointer]:
               - img [ref=e44]
           - generic [ref=e47]:

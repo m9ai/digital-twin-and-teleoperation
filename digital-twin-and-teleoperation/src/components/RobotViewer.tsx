@@ -150,7 +150,7 @@ export function RobotViewer() {
       <div className="panel-title justify-between">
         <div className="flex items-center gap-2">
           <Maximize2 className="h-4 w-4" />
-          <span>Digital Twin (URDF / Three.js)</span>
+          <span>Digital Twin</span>
         </div>
         <button
           onClick={() => setShowPath((value) => !value)}
