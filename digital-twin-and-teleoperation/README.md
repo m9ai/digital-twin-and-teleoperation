@@ -163,6 +163,8 @@ ros2 topic echo /joint_command
 ## 核心功能
 
 - URDF/XACRO 机器人模型加载与关节联动
+  - `.xacro` 在浏览器内直接展开为纯 URDF：`<xacro:property>`、`${}` 表达式、`<xacro:macro>`（含默认值与 `*block` 块参数）、`<xacro:insert_block>`、`<xacro:if>` / `<xacro:unless>`、`<xacro:include>`、`$(arg …)` / `$(find …)`
+  - `<xacro:include>` 依赖的其他 `.xacro` 需要一起上传（文件或文件夹），否则该分支会被跳过并在面板中给出提示
 - 三维工作场景：内置车间 / 房间 / 街道 / 实验室，支持上传自定义 glTF / GLB 场景模型
 - `/joint_states` 实时同步 Three.js 数字孪生
 - URDF 在线编辑（Monaco）：XML 语法校验（含出错行号）、显式「应用到数字孪生」、还原与导出

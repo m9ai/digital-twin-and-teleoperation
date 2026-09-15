@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { resolveMeshReferences } from '@/lib/urdfMeshResolver';
 import { parseJointDefinitions, parseLinkDefinitions } from '@/lib/urdfJoints';
+import { expandXacro } from '@/lib/xacroProcessor';
 import { getModelPath, mergeModelFiles } from '@/lib/directoryReader';
 import type { MeshReference } from '@/lib/urdfMeshResolver';
 import type { URDFJointDefinition, URDFLinkDefinition } from '@/lib/urdfJoints';
@@ -18,7 +19,17 @@ export interface URDFState {
   unresolvedReplaced: number;
   joints: URDFJointDefinition[];
   links: URDFLinkDefinition[];
-  setURDF: (fileName: string, text: string, initialMeshFiles?: File[]) => void;
+  /** True when the active model arrived as XACRO and was macro-expanded. */
+  xacroExpanded: boolean;
+  /** Non-fatal problems reported while expanding XACRO. */
+  xacroWarnings: string[];
+  setURDF: (
+    fileName: string,
+    text: string,
+    initialMeshFiles?: File[],
+    /** Text of other model files, keyed by path, for `<xacro:include>`. */
+    xacroSources?: Record<string, string>
+  ) => void;
   addMeshFiles: (files: File[]) => void;
   /** `identifier` is the upload-relative path, or the bare file name. */
   removeMeshFile: (identifier: string) => void;
@@ -31,14 +42,28 @@ export interface URDFState {
 
 const defaultURDFUrl = '/assets/industrial-5axis-arm.urdf';
 
+type ApplyableState = Pick<
+  URDFState,
+  'urdfText' | 'meshFiles' | 'fileName' | 'blobUrl'
+>;
+
+/**
+ * Normalise one model source into everything the app needs.
+ *
+ * XACRO is expanded first: the scene graph, joint list and mesh resolver all
+ * expect plain URDF, and a macro such as `${...}` inside an origin would
+ * otherwise reach `URDFLoader` verbatim.
+ */
 function applyURDF(
-  state: Pick<URDFState, 'urdfText' | 'meshFiles' | 'fileName' | 'blobUrl'>,
+  state: ApplyableState,
   fileName: string,
-  text: string,
-  meshFiles: File[]
+  source: string,
+  meshFiles: File[],
+  xacroSources: Record<string, string> = {}
 ): Partial<URDFState> {
+  const xacro = expandXacro(source, { files: xacroSources });
   const { text: processed, resolved, missing, unresolvedReplaced } = resolveMeshReferences(
-    text,
+    xacro.text,
     meshFiles
   );
   const blob = new Blob([processed], { type: 'application/xml' });
@@ -50,7 +75,9 @@ function applyURDF(
 
   return {
     fileName,
-    urdfText: text,
+    // Downstream always consumes the expanded URDF so that the editor can
+    // validate and patch what the renderer actually loaded.
+    urdfText: xacro.text,
     processedText: processed,
     blobUrl,
     error: null,
@@ -59,8 +86,10 @@ function applyURDF(
     resolvedMeshes: resolved,
     missingMeshes: missing,
     unresolvedReplaced,
-    joints: parseJointDefinitions(text),
-    links: parseLinkDefinitions(text),
+    joints: parseJointDefinitions(xacro.text),
+    links: parseLinkDefinitions(xacro.text),
+    xacroExpanded: xacro.expanded,
+    xacroWarnings: xacro.warnings,
   };
 }
 
@@ -77,8 +106,10 @@ export const useURDFStore = create<URDFState>((set, get) => ({
   unresolvedReplaced: 0,
   joints: [],
   links: [],
-  setURDF: (fileName, text, initialMeshFiles = []) =>
-    set((prev) => applyURDF(prev, fileName, text, initialMeshFiles)),
+  xacroExpanded: false,
+  xacroWarnings: [],
+  setURDF: (fileName, text, initialMeshFiles = [], xacroSources = {}) =>
+    set((prev) => applyURDF(prev, fileName, text, initialMeshFiles, xacroSources)),
   addMeshFiles: (files) =>
     set((prev) => {
       const merged = mergeModelFiles(prev.meshFiles, files);
@@ -128,6 +159,8 @@ export const useURDFStore = create<URDFState>((set, get) => ({
       unresolvedReplaced: 0,
       joints: [],
       links: [],
+      xacroExpanded: false,
+      xacroWarnings: [],
     });
     void get().loadDefault();
   },

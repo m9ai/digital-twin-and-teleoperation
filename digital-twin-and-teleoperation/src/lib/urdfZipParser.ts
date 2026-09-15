@@ -5,38 +5,61 @@ export interface ParsedZipPackage {
   urdfText: string;
   urdfFileName: string;
   meshFiles: File[];
+  /**
+   * Text of every `.xacro` in the archive, keyed by its archive-relative path.
+   * Needed to resolve `<xacro:include>` after unpacking.
+   */
+  xacroSources: Record<string, string>;
+}
+
+const MESH_SUFFIXES = ['.stl', '.dae', '.obj', '.glb', '.gltf'];
+
+/**
+ * Pick the model entry point from an archive.
+ *
+ * A `.urdf` wins over a `.xacro` (it needs no expansion), and among the
+ * candidates of the same kind the shallowest one wins so that a top-level
+ * entry beats a nested `urdf/robot.xacro`.
+ */
+function pickModelEntry(entries: JSZip.JSZipObject[]): JSZip.JSZipObject | undefined {
+  const candidates = entries.filter((entry) => {
+    const lower = entry.name.toLowerCase();
+    return lower.endsWith('.urdf') || lower.endsWith('.xacro');
+  });
+  if (candidates.length === 0) return undefined;
+
+  const depth = (entry: JSZip.JSZipObject) => entry.name.split('/').length;
+  return [...candidates].sort((a, b) => {
+    const aIsUrdf = a.name.toLowerCase().endsWith('.urdf');
+    const bIsUrdf = b.name.toLowerCase().endsWith('.urdf');
+    if (aIsUrdf !== bIsUrdf) return aIsUrdf ? -1 : 1;
+    return depth(a) - depth(b);
+  })[0];
 }
 
 export async function parseURDFZip(zipFile: File): Promise<ParsedZipPackage> {
   const zip = await JSZip.loadAsync(zipFile);
+  const allEntries = Object.values(zip.files).filter((entry) => !entry.dir);
 
-  // Find the first URDF file in the archive.
-  const urdfEntry = Object.values(zip.files).find(
-    (entry) => !entry.dir && entry.name.toLowerCase().endsWith('.urdf')
-  );
-
-  if (!urdfEntry) {
-    throw new Error('压缩包中未找到 .urdf 文件');
+  const modelEntry = pickModelEntry(allEntries);
+  if (!modelEntry) {
+    throw new Error('压缩包中未找到 .urdf / .xacro 文件');
   }
 
-  const urdfText = await urdfEntry.async('text');
-  const urdfFileName = urdfEntry.name.split('/').pop() ?? urdfEntry.name;
+  const urdfText = await modelEntry.async('text');
+  const urdfFileName = modelEntry.name.split('/').pop() ?? modelEntry.name;
 
   // Collect all mesh files.
   const meshFiles: File[] = [];
-  const meshPromises: Promise<void>[] = [];
+  // Collect every xacro so `<xacro:include>` can be resolved offline.
+  const xacroSources: Record<string, string> = {};
+  const pending: Promise<void>[] = [];
 
-  for (const entry of Object.values(zip.files)) {
-    if (entry.dir) continue;
+  for (const entry of allEntries) {
     const lower = entry.name.toLowerCase();
-    if (
-      lower.endsWith('.stl') ||
-      lower.endsWith('.dae') ||
-      lower.endsWith('.obj') ||
-      lower.endsWith('.glb') ||
-      lower.endsWith('.gltf')
-    ) {
-      meshPromises.push(
+
+    if (MESH_SUFFIXES.some((suffix) => lower.endsWith(suffix))) {
+      pending.push(
         entry.async('arraybuffer').then((buffer) => {
           const basename = entry.name.split('/').pop() ?? entry.name;
           let mime = 'application/octet-stream';
@@ -50,10 +73,19 @@ export async function parseURDFZip(zipFile: File): Promise<ParsedZipPackage> {
           meshFiles.push(withModelPath(file, entry.name));
         })
       );
+      continue;
+    }
+
+    if (lower.endsWith('.xacro')) {
+      pending.push(
+        entry.async('text').then((text) => {
+          xacroSources[entry.name.replace(/^\.?\//, '')] = text;
+        })
+      );
     }
   }
 
-  await Promise.all(meshPromises);
+  await Promise.all(pending);
 
-  return { urdfText, urdfFileName, meshFiles };
+  return { urdfText, urdfFileName, meshFiles, xacroSources };
 }

@@ -39,6 +39,40 @@ const DIRECTORY_INPUT_PROPS = {
 
 const FILE_ACCEPT = '.urdf,.xacro,.zip,.stl,.dae,.obj,.glb,.gltf';
 
+const isXacroFile = (name: string) => name.toLowerCase().endsWith('.xacro');
+
+/**
+ * Which file is the entry point of the uploaded model set.
+ *
+ * A generated `.urdf` is preferred over a `.xacro` because it needs no macro
+ * expansion; within one kind the shallowest path wins so that
+ * `robot.xacro` beats `urdf/robot.xacro` in nested package layouts.
+ */
+function pickModelFile(files: File[]): File | undefined {
+  const depth = (file: File) => getModelPath(file).split('/').length;
+  return [...files].sort((a, b) => {
+    const aIsUrdf = !isXacroFile(a.name);
+    const bIsUrdf = !isXacroFile(b.name);
+    if (aIsUrdf !== bIsUrdf) return aIsUrdf ? -1 : 1;
+    return depth(a) - depth(b);
+  })[0];
+}
+
+/** Read the sibling xacro files used to resolve `<xacro:include>`. */
+async function readSources(files: File[]): Promise<Record<string, string>> {
+  const sources: Record<string, string> = {};
+  await Promise.all(
+    files.map(async (file) => {
+      try {
+        sources[getModelPath(file)] = await file.text();
+      } catch {
+        // An unreadable sibling only costs us one include target.
+      }
+    })
+  );
+  return sources;
+}
+
 interface FileLeaf {
   name: string;
   path: string;
@@ -177,6 +211,8 @@ export function URDFUploadPanel() {
     resolvedMeshes,
     missingMeshes,
     unresolvedReplaced,
+    xacroExpanded,
+    xacroWarnings,
     setURDF,
     addMeshFiles,
     removeMeshFile,
@@ -187,7 +223,7 @@ export function URDFUploadPanel() {
 
   /**
    * Single entry point for every load path (drop, file picker, folder picker).
-   * Archives win, then the shallowest URDF is used so a folder with a nested
+   * Archives win, then the shallowest model is used so a folder with a nested
    * `urdf/` sub-directory still resolves to the top-level description.
    */
   const loadFiles = useCallback(
@@ -200,15 +236,19 @@ export function URDFUploadPanel() {
       try {
         const archive = incoming.find((file) => isZipFile(file.name));
         if (archive) {
-          const { urdfText, urdfFileName, meshFiles: archivedMeshes } = await parseURDFZip(archive);
-          setURDF(urdfFileName, urdfText, archivedMeshes);
+          const {
+            urdfText,
+            urdfFileName,
+            meshFiles: archivedMeshes,
+            xacroSources,
+          } = await parseURDFZip(archive);
+          setURDF(urdfFileName, urdfText, archivedMeshes, xacroSources);
           return;
         }
 
         const meshes = incoming.filter((file) => isMeshFile(file.name));
-        const urdf = incoming
-          .filter((file) => isURDFFile(file.name))
-          .sort((a, b) => getModelPath(a).split('/').length - getModelPath(b).split('/').length)[0];
+        const models = incoming.filter((file) => isURDFFile(file.name));
+        const urdf = pickModelFile(models);
 
         if (!urdf) {
           if (meshes.length === 0) {
@@ -219,15 +259,21 @@ export function URDFUploadPanel() {
         }
 
         const text = await urdf.text();
-        const head = text.trim();
-        if (!head.startsWith('<?xml') && !head.startsWith('<robot')) {
+        if (!/<robot[\s>]/.test(text)) {
           throw new Error(`${urdf.name} 内容不是有效的 URDF/XML`);
         }
+
+        // A xacro almost always splits its macros across sibling files, so
+        // every other `.xacro` in the selection is collected as a candidate
+        // for `<xacro:include>` before expansion starts.
+        const xacroSources = await readSources(
+          models.filter((file) => file !== urdf && isXacroFile(file.name))
+        );
 
         // Keep meshes loaded in earlier passes so a folder and its meshes can
         // be added in separate steps.
         const merged = mergeModelFiles(useURDFStore.getState().meshFiles, meshes);
-        setURDF(urdf.name, text, merged);
+        setURDF(urdf.name, text, merged, xacroSources);
       } catch (err) {
         setError(err instanceof Error ? err.message : '加载模型失败');
       } finally {
@@ -357,9 +403,17 @@ export function URDFUploadPanel() {
 
           {fileName && (
             <div className="flex items-center justify-between rounded-lg bg-slate-800/60 px-3 py-2 text-xs">
-              <div className="flex items-center gap-2 truncate text-slate-300">
-                <FileText className="h-3.5 w-3.5 text-cyan-400" />
+              <div className="flex min-w-0 items-center gap-2 truncate text-slate-300">
+                <FileText className="h-3.5 w-3.5 shrink-0 text-cyan-400" />
                 <span className="truncate">{fileName}</span>
+                {xacroExpanded && (
+                  <span
+                    className="shrink-0 rounded bg-violet-500/20 px-1.5 py-0.5 text-[10px] text-violet-300 ring-1 ring-violet-500/30"
+                    title="XACRO 宏已在浏览器中展开为纯 URDF"
+                  >
+                    XACRO 已展开
+                  </span>
+                )}
               </div>
               <button
                 onClick={() => {
@@ -422,6 +476,21 @@ export function URDFUploadPanel() {
             <div className="flex items-start gap-2 rounded-lg bg-slate-700/30 px-3 py-2 text-xs text-slate-400 ring-1 ring-slate-600">
               <Box className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>当前 URDF 不含外部 mesh 引用。</span>
+            </div>
+          )}
+
+          {xacroWarnings.length > 0 && (
+            <div className="flex flex-col gap-1 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-400 ring-1 ring-amber-500/30">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                <span>XACRO 展开了但有 {xacroWarnings.length} 处需要注意：</span>
+              </div>
+              <ul className="ml-5 list-disc text-[10px] leading-4">
+                {xacroWarnings.slice(0, 4).map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+                {xacroWarnings.length > 4 && <li>…等共 {xacroWarnings.length} 条</li>}
+              </ul>
             </div>
           )}
 

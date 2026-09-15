@@ -355,6 +355,12 @@ export function createURDFScene(
   // the robot appears oversized / clipped.
   let pendingMeshes = 0;
   let hasFramed = false;
+  let settleRaf: number | null = null;
+  let settleFrame = 0;
+  let framingTimeout: number | null = null;
+
+  const MAX_SETTLE_FRAMES = 18;
+  const GROUND_EPSILON = 0.02;
 
   const settleRobotOnGround = () => {
     if (!robot) return;
@@ -368,26 +374,47 @@ export function createURDFScene(
     // lowest point ends up below y = 0. Shift the root so the model rests on
     // the ground without changing its horizontal placement.
     // A visible epsilon keeps the soles clearly above generated floor planes
-    // and avoids z-fighting with the ground grid.
-    const GROUND_EPSILON = 0.01;
+    // and avoids z-fighting with the ground grid (which sits at y ≈ 0.003).
     if (box.min.y < GROUND_EPSILON) {
       robot.position.y += GROUND_EPSILON - box.min.y;
       robot.updateMatrixWorld(true);
     }
   };
 
+  const stopScheduledSettle = () => {
+    if (settleRaf !== null) {
+      cancelAnimationFrame(settleRaf);
+      settleRaf = null;
+    }
+    settleFrame = 0;
+  };
+
+  /**
+   * Keep re-measuring the model bounds for several frames. URDFLoader sometimes
+   * attaches geometry a frame or two after the loader callback fires, so a
+   * single measurement can miss late meshes and leave the robot penetrating
+   * the ground.
+   */
+  const scheduleSettle = () => {
+    stopScheduledSettle();
+    const step = () => {
+      settleRobotOnGround();
+      settleFrame += 1;
+      if (settleFrame < MAX_SETTLE_FRAMES) {
+        settleRaf = requestAnimationFrame(step);
+      } else {
+        settleRaf = null;
+      }
+    };
+    step();
+  };
+
   const applyInitialFraming = () => {
+    // Always keep settling; camera framing is only done once.
+    scheduleSettle();
     if (!hasFramed && runtime) {
       hasFramed = true;
-      settleRobotOnGround();
       runtime.applyCameraPreset('perspective', false);
-      // Some URDFLoader mesh attachment happens just before the next render,
-      // so re-measure once more after one frame to catch any remaining ground
-      // penetration and re-frame the camera on the final bounds.
-      requestAnimationFrame(() => {
-        settleRobotOnGround();
-        runtime?.applyCameraPreset('perspective', false);
-      });
     }
   };
 
@@ -396,7 +423,13 @@ export function createURDFScene(
     loadRobotMesh(path, manager, (mesh, err) => {
       done(mesh, err);
       pendingMeshes -= 1;
-      if (pendingMeshes === 0) applyInitialFraming();
+      if (pendingMeshes === 0) {
+        if (framingTimeout !== null) {
+          clearTimeout(framingTimeout);
+          framingTimeout = null;
+        }
+        applyInitialFraming();
+      }
     });
   };
 
@@ -531,7 +564,16 @@ export function createURDFScene(
         // Defer the initial framing until every asynchronous mesh has been
         // loaded, otherwise the bounding box is too small and the camera ends
         // up zoomed in too far. For mesh-less URDFs this fires immediately.
-        if (pendingMeshes === 0) applyInitialFraming();
+        // A hard timeout prevents a hung mesh from leaving the model forever
+        // underground.
+        if (pendingMeshes === 0) {
+          applyInitialFraming();
+        } else {
+          framingTimeout = window.setTimeout(() => {
+            framingTimeout = null;
+            applyInitialFraming();
+          }, 6000);
+        }
 
         const jointGizmos = new Map<string, THREE.Object3D>();
         for (const def of options.joints ?? []) {
@@ -583,6 +625,11 @@ export function createURDFScene(
             : null;
 
         const dispose = () => {
+          stopScheduledSettle();
+          if (framingTimeout !== null) {
+            clearTimeout(framingTimeout);
+            framingTimeout = null;
+          }
           jointInteraction?.dispose();
           runtime?.dispose();
           overlay.dispose();
