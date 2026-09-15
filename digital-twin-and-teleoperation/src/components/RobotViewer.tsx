@@ -243,7 +243,7 @@ export function RobotViewer() {
           <Radio className="h-3 w-3" />
           /joint_states → 环形缓冲 + 帧内插值
         </span>
-        <span>点击模型关节可拖动 · 点击末端小球召唤 Gizmo</span>
+        <span>点击模型关节可拖动</span>
       </div>
     </div>
   );

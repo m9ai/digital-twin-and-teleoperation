@@ -37,9 +37,9 @@ const orientation = referenceQuaternion.clone().invert().multiply(worldQuaternio
 
 姿态这里有个坑：不能直接对四元数做矩阵变换。正确做法是取基座的世界四元数取逆后左乘——这样旋转部分才对（如果基座含缩放，矩阵变换会把缩放混进四元数）。
 
-三个工程细节：
+两个工程细节：
 
-1. **点击召唤**：在末端挂一个 `depthTest: false` 的小球，用 `pointerdown/pointerup` 位移 < 4px 判定为「点击」而非「旋转视角」，再 raycast 命中即开关 Gizmo。
+1. **工具条开关**：Gizmo 由视图工具条上的 `TCP Gizmo` 按钮开关，不再依赖末端拾取标记，模型上也不会多出小球。
 2. **拖拽时接管相机**：监听 `dragging-changed`，把 `OrbitControls.enabled` 置反，否则拖轴会把视角甩飞。
 3. **限流发布**：`objectChange` 在拖拽中每帧都触发，按 50 ms 节流下发 `/ik_target`（`geometry_msgs/PoseStamped`），松手再补一帧 `end`。
 

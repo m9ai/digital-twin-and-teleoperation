@@ -39,11 +39,6 @@ export interface TCPGizmoHandles {
 
 /** Throttle IK target publishing while dragging (ms). */
 const PUBLISH_INTERVAL_MS = 50;
-/** A pointer gesture shorter than this (px) counts as a click, not an orbit. */
-const CLICK_SLOP_PX = 4;
-
-const HANDLE_COLOR = 0x22d3ee;
-const HANDLE_COLOR_ACTIVE = 0xf59e0b;
 
 export function createTCPGizmo(options: TCPGizmoOptions): TCPGizmoHandles | null {
   const { scene, camera, domElement, orbit, tcp, reference, onPoseChange, onEnabledChange } = options;
@@ -62,23 +57,6 @@ export function createTCPGizmo(options: TCPGizmoOptions): TCPGizmoHandles | null
   gizmo.attach(proxy);
   gizmo.visible = false;
 
-  /**
-   * Small pickable marker parented to the TCP so the operator can click the
-   * tool itself to summon the gizmo.
-   */
-  const handleGeometry = new THREE.SphereGeometry(1, 16, 16);
-  const handleMaterial = new THREE.MeshBasicMaterial({
-    color: HANDLE_COLOR,
-    transparent: true,
-    opacity: 0.85,
-    depthTest: false,
-  });
-  const handle = new THREE.Mesh(handleGeometry, handleMaterial);
-  handle.name = 'tcp-pick-handle';
-  handle.renderOrder = 999;
-  handle.userData.isTCPHandle = true;
-  tcp.add(handle);
-
   let enabled = false;
   let draggingNow = false;
   let lastPublishAt = 0;
@@ -95,7 +73,6 @@ export function createTCPGizmo(options: TCPGizmoOptions): TCPGizmoHandles | null
     enabled = next;
     gizmo.enabled = next;
     gizmo.visible = next;
-    handleMaterial.color.setHex(next ? HANDLE_COLOR_ACTIVE : HANDLE_COLOR);
     if (!next) syncProxyToTCP();
     onEnabledChange?.(next);
   };
@@ -151,54 +128,13 @@ export function createTCPGizmo(options: TCPGizmoOptions): TCPGizmoHandles | null
   gizmo.addEventListener('objectChange', onObjectChange);
   gizmo.addEventListener('dragging-changed', onDraggingChanged);
 
-  // ---- click-to-summon -------------------------------------------------
-  const raycaster = new THREE.Raycaster();
-  const pointer = new THREE.Vector2();
-  let downAt: { x: number; y: number; t: number } | null = null;
-
-  const updatePointer = (event: PointerEvent) => {
-    const rect = domElement.getBoundingClientRect();
-    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  };
-
-  const onPointerDown = (event: PointerEvent) => {
-    downAt = { x: event.clientX, y: event.clientY, t: performance.now() };
-  };
-
-  const onPointerUp = (event: PointerEvent) => {
-    if (!downAt) return;
-    const moved = Math.hypot(event.clientX - downAt.x, event.clientY - downAt.y);
-    const elapsed = performance.now() - downAt.t;
-    downAt = null;
-
-    if (moved > CLICK_SLOP_PX || elapsed > 500) return;
-    if (gizmo.dragging) return;
-
-    updatePointer(event);
-    raycaster.setFromCamera(pointer, camera);
-    const hits = raycaster.intersectObject(handle, false);
-    if (hits.length > 0) {
-      setEnabled(!enabled);
-    }
-  };
-
-  domElement.addEventListener('pointerdown', onPointerDown);
-  domElement.addEventListener('pointerup', onPointerUp);
-
   const dispose = () => {
-    domElement.removeEventListener('pointerdown', onPointerDown);
-    domElement.removeEventListener('pointerup', onPointerUp);
     gizmo.removeEventListener('objectChange', onObjectChange);
     gizmo.removeEventListener('dragging-changed', onDraggingChanged);
     gizmo.detach();
     gizmo.dispose();
     scene.remove(gizmo);
     scene.remove(proxy);
-
-    if (handle.parent) handle.parent.remove(handle);
-    handleGeometry.dispose();
-    handleMaterial.dispose();
 
     orbit.enabled = true;
   };
@@ -211,11 +147,6 @@ export function createTCPGizmo(options: TCPGizmoOptions): TCPGizmoHandles | null
     isEnabled: () => enabled,
     update: () => {
       if (!enabled || !gizmo.dragging) syncProxyToTCP();
-      // Keep the pick marker at a constant on-screen size.
-      const distance = camera.getWorldPosition(new THREE.Vector3()).distanceTo(
-        tcp.getWorldPosition(new THREE.Vector3())
-      );
-      handle.scale.setScalar(Math.max(0.004, distance * 0.012));
     },
     dispose,
   };

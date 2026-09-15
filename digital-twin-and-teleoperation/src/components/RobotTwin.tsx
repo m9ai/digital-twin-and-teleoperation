@@ -49,8 +49,8 @@ import { rosClientRef } from '@/lib/rosRef';
  *  - `/joint_states` are written to a ring buffer outside React and sampled
  *    with linear interpolation inside the render loop, so a 100 Hz feed
  *    renders smoothly at 60 FPS without re-rendering React.
- *  - Clicking the TCP summons a `TransformControls` gizmo; dragging publishes
- *    an IK target pose expressed in the robot base frame.
+ *  - The toolbar toggles a `TransformControls` gizmo on the TCP; dragging it
+ *    publishes an IK target pose expressed in the robot base frame.
  *  - Camera presets (perspective / head / top / TCP-follow) transition with an
  *    eased tween driven by the same render loop.
  *  - Joint limit and link proximity faults tint the affected links.
@@ -546,7 +546,7 @@ export function RobotTwin({
 
           <button
             onClick={toggleGizmo}
-            title="点击 TCP 或此处召唤三维姿态轴"
+            title="显示 / 隐藏 TCP 三维姿态轴"
             className={`flex items-center gap-1 whitespace-nowrap rounded px-2 py-1 text-[10px] font-medium transition-colors ${
               gizmoOn
                 ? 'bg-amber-500/25 text-amber-300 ring-1 ring-amber-500/40'
