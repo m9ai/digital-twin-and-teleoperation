@@ -18,8 +18,14 @@ import {
   ensurePBRMaterial,
   findLinkName,
 } from '@/lib/scene/materials';
+import {
+  createJointInteraction,
+  type JointInteractionHandles,
+  type JointSelectionInfo,
+} from '@/lib/scene/jointInteraction';
 import type { SafetyHighlightEntry } from '@/lib/scene/safetyHighlight';
 import type { LinkNode } from '@/lib/safetyMonitor';
+import type { URDFJointDefinition, URDFLinkDefinition } from '@/lib/urdfJoints';
 import type { CameraPresetId, GizmoMode, JointState, Pose } from '@/types';
 
 export interface SceneHandles {
@@ -49,6 +55,13 @@ export interface SceneHandles {
   runtime: SceneRuntime | null;
   /** Scene in which the robot operates: lights, backdrop and static props. */
   environment: EnvironmentRig;
+  /** Click-a-link joint inspection / jog controller. */
+  jointInteraction: JointInteractionHandles | null;
+  /** Parsed movable joints and link metadata from the URDF. */
+  jointDefinitions: URDFJointDefinition[];
+  linkDefinitions: URDFLinkDefinition[];
+  /** Highlight the axis gizmo of the given joint, or hide all with null. */
+  setActiveJointGizmo: (jointName: string | null) => void;
 }
 
 /** The last link of the kinematic chain: a link that is no joint's parent. */
@@ -66,6 +79,56 @@ function findEndEffectorLink(robot: THREE.Object3D): THREE.Object3D | null {
 
   const leaves = Object.values(urdf.links).filter((link) => !parentNames.has(link.name));
   return leaves[leaves.length - 1] ?? null;
+}
+
+/**
+ * Visual gizmo for a joint: a red arrow along the axis and a green ring + arrow
+ * indicating the positive rotation direction. Added as a child of the joint node
+ * so it lives in the joint frame.
+ */
+function createJointAxisGizmo(axis: THREE.Vector3): THREE.Object3D {
+  const group = new THREE.Group();
+  group.name = 'joint_axis_gizmo';
+  group.renderOrder = 999;
+
+  const dir = axis.clone().normalize();
+  const len = 0.15;
+
+  // Red arrow along the joint axis (normal). Always draw on top of the mesh.
+  const arrow = new THREE.ArrowHelper(dir, new THREE.Vector3(0, 0, 0), len, 0xff3333, len * 0.15, len * 0.1);
+  arrow.traverse((child) => {
+    const material = (child as THREE.Mesh | THREE.Line).material;
+    if (material) {
+      if (Array.isArray(material)) material.forEach((m) => (m.depthTest = false));
+      else material.depthTest = false;
+    }
+  });
+  group.add(arrow);
+
+  // Green ring perpendicular to the axis.
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.08, 0.003, 8, 48),
+    new THREE.MeshBasicMaterial({ color: 0x22c55e, transparent: true, opacity: 0.9, depthTest: false })
+  );
+  ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
+  group.add(ring);
+
+  // Small green arrow on the ring showing the positive rotation direction.
+  const up = Math.abs(dir.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+  const tangent = new THREE.Vector3().crossVectors(dir, up).normalize();
+  const binormal = new THREE.Vector3().crossVectors(dir, tangent).normalize();
+  const rotArrow = new THREE.ArrowHelper(tangent, binormal.clone().multiplyScalar(0.08), 0.06, 0x22c55e, 0.02, 0.015);
+  rotArrow.traverse((child) => {
+    const material = (child as THREE.Mesh | THREE.Line).material;
+    if (material) {
+      if (Array.isArray(material)) material.forEach((m) => (m.depthTest = false));
+      else material.depthTest = false;
+    }
+  });
+  group.add(rotArrow);
+
+  group.visible = false;
+  return group;
 }
 
 export function createTrajectoryPathOverlay(scene: THREE.Scene) {
@@ -183,6 +246,12 @@ export function createURDFScene(
   options: {
     onPoseChange?: (pose: Pose, phase: 'drag' | 'end') => void;
     environment?: EnvironmentRigCallbacks;
+    joints?: URDFJointDefinition[];
+    links?: URDFLinkDefinition[];
+    onJointHover?: (info: JointSelectionInfo | null) => void;
+    onJointSelect?: (info: JointSelectionInfo | null) => void;
+    onJointChange?: (jointName: string, value: number) => void;
+    onJointDragEnd?: (jointName: string, value: number) => void;
   } = {}
 ): Promise<SceneHandles> {
   const { scene, camera, renderer, controls, environment } = createSceneShell(
@@ -309,7 +378,15 @@ export function createURDFScene(
         robot.updateMatrixWorld(true);
 
         const urdfJoints = (robot as unknown as {
-          joints: Record<string, { setJointValue: (...values: number[]) => void; angle?: number }>;
+          joints: Record<
+            string,
+            THREE.Object3D & {
+              axis: THREE.Vector3;
+              jointType: string;
+              setJointValue: (...values: number[]) => void;
+              angle?: number;
+            }
+          >;
         }).joints;
 
         const applyJointPositions = (names: string[], values: number[]) => {
@@ -376,7 +453,39 @@ export function createURDFScene(
         // up zoomed in too far. For mesh-less URDFs this fires immediately.
         if (pendingMeshes === 0) applyInitialFraming();
 
+        const jointGizmos = new Map<string, THREE.Object3D>();
+        for (const def of options.joints ?? []) {
+          const joint = urdfJoints?.[def.name];
+          if (!joint || !joint.axis) continue;
+          const gizmo = createJointAxisGizmo(joint.axis);
+          joint.add(gizmo);
+          jointGizmos.set(def.name, gizmo);
+        }
+
+        const setActiveJointGizmo = (name: string | null) => {
+          for (const [jointName, gizmo] of jointGizmos) {
+            gizmo.visible = jointName === name;
+          }
+        };
+
+        const jointInteraction =
+          options.joints && options.joints.length > 0
+            ? createJointInteraction({
+                domElement: renderer.domElement,
+                camera,
+                robot,
+                joints: options.joints,
+                links: options.links ?? [],
+                controls,
+                onHover: (info) => options.onJointHover?.(info),
+                onSelect: (info) => options.onJointSelect?.(info),
+                onChange: (name, value) => options.onJointChange?.(name, value),
+                onDragEnd: (name, value) => options.onJointDragEnd?.(name, value),
+              })
+            : null;
+
         const dispose = () => {
+          jointInteraction?.dispose();
           runtime?.dispose();
           overlay.dispose();
           environment.dispose();
@@ -405,6 +514,10 @@ export function createURDFScene(
           setPathPlayhead: overlay.setPathPlayhead,
           runtime,
           environment,
+          jointInteraction,
+          jointDefinitions: options.joints ?? [],
+          linkDefinitions: options.links ?? [],
+          setActiveJointGizmo,
         });
       })
       .catch((err: unknown) => reject(err));
@@ -640,6 +753,10 @@ export function createFallbackScene(
     setPathPlayhead: overlay.setPathPlayhead,
     runtime,
     environment,
+    jointInteraction: null,
+    jointDefinitions: [],
+    linkDefinitions: [],
+    setActiveJointGizmo: () => {},
     dispose: () => {
       runtime.dispose();
       overlay.dispose();

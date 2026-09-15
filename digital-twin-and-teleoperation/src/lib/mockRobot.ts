@@ -28,6 +28,8 @@ export const DEFAULT_MOCK_JOINTS: URDFJointDefinition[] = ['joint1', 'joint2', '
     velocity: 1,
     effort: 10,
     axis: [0, 0, 1],
+    parent: index === 0 ? 'base' : `link${index}`,
+    child: `link${index + 1}`,
   })
 );
 

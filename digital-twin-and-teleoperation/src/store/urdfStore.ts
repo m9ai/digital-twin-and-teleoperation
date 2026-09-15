@@ -1,9 +1,9 @@
 import { create } from 'zustand';
 import { resolveMeshReferences } from '@/lib/urdfMeshResolver';
-import { parseJointDefinitions } from '@/lib/urdfJoints';
+import { parseJointDefinitions, parseLinkDefinitions } from '@/lib/urdfJoints';
 import { getModelPath, mergeModelFiles } from '@/lib/directoryReader';
 import type { MeshReference } from '@/lib/urdfMeshResolver';
-import type { URDFJointDefinition } from '@/lib/urdfJoints';
+import type { URDFJointDefinition, URDFLinkDefinition } from '@/lib/urdfJoints';
 
 export interface URDFState {
   fileName: string | null;
@@ -17,6 +17,7 @@ export interface URDFState {
   missingMeshes: MeshReference[];
   unresolvedReplaced: number;
   joints: URDFJointDefinition[];
+  links: URDFLinkDefinition[];
   setURDF: (fileName: string, text: string, initialMeshFiles?: File[]) => void;
   addMeshFiles: (files: File[]) => void;
   /** `identifier` is the upload-relative path, or the bare file name. */
@@ -59,6 +60,7 @@ function applyURDF(
     missingMeshes: missing,
     unresolvedReplaced,
     joints: parseJointDefinitions(text),
+    links: parseLinkDefinitions(text),
   };
 }
 
@@ -74,6 +76,7 @@ export const useURDFStore = create<URDFState>((set, get) => ({
   missingMeshes: [],
   unresolvedReplaced: 0,
   joints: [],
+  links: [],
   setURDF: (fileName, text, initialMeshFiles = []) =>
     set((prev) => applyURDF(prev, fileName, text, initialMeshFiles)),
   addMeshFiles: (files) =>
@@ -124,6 +127,7 @@ export const useURDFStore = create<URDFState>((set, get) => ({
       missingMeshes: [],
       unresolvedReplaced: 0,
       joints: [],
+      links: [],
     });
     void get().loadDefault();
   },

@@ -22,6 +22,7 @@ import {
   evaluateJointLimits,
 } from '@/lib/safetyMonitor';
 import type { SafetyHighlightEntry } from '@/lib/scene/safetyHighlight';
+import type { JointSelectionInfo } from '@/lib/scene/jointInteraction';
 import type {
   CameraPresetId,
   CustomScene,
@@ -32,6 +33,9 @@ import type {
   SafetyReport,
 } from '@/types';
 import type { URDFJointDefinition } from '@/lib/urdfJoints';
+import { useRobotStore } from '@/store/robotStore';
+import { useConnectionStore } from '@/store/connectionStore';
+import { rosClientRef } from '@/lib/rosRef';
 
 /**
  * `RobotTwin` — reusable Web URDF viewer with ROS 2 data sync.
@@ -53,6 +57,8 @@ export interface RobotTwinProps {
   urdfUrl: string | null;
   /** URDF joint definitions: drive safety checks and wrap-aware interpolation. */
   joints?: URDFJointDefinition[];
+  /** Parsed link metadata for the interactive inspector. */
+  links?: import('@/lib/urdfJoints').URDFLinkDefinition[];
   /** End-effector polyline to overlay, or null to clear it. */
   trajectoryPath?: THREE.Vector3[] | null;
   /** Playhead marker position along the trajectory. */
@@ -96,6 +102,7 @@ const CAMERA_PRESETS: Array<{ id: CameraPresetId; label: string; icon: typeof Bo
 export function RobotTwin({
   urdfUrl,
   joints = [],
+  links = [],
   trajectoryPath,
   playhead,
   onPoseChange,
@@ -118,6 +125,16 @@ export function RobotTwin({
   const [preset, setPreset] = useState<CameraPresetId>('perspective');
   const [following, setFollowing] = useState(false);
   const [inputRateHz, setInputRateHz] = useState(0);
+  const [hoverInfo, setHoverInfo] = useState<JointSelectionInfo | null>(null);
+  const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
+  const [dragInfo, setDragInfo] = useState<JointSelectionInfo | null>(null);
+  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
+
+  const setJointTarget = useRobotStore((s) => s.setJointTarget);
+  const setJogActive = useRobotStore((s) => s.setJogActive);
+  const { useSimulation } = useConnectionStore();
+  const useSimulationRef = useRef(useSimulation);
+  useSimulationRef.current = useSimulation;
 
   // Keep callbacks out of effect dependencies: the render loop must not be
   // torn down just because a parent re-created an inline handler.
@@ -194,8 +211,55 @@ export function RobotTwin({
       onPoseChange: (pose: Pose, phase: 'drag' | 'end') => poseHandlerRef.current?.(pose, phase),
     };
 
+    const handleJointHover = (info: JointSelectionInfo | null) => {
+      setHoverInfo(info);
+      if (info) {
+        setHoverPos(clampCardPos(container, info.screenX, info.screenY));
+        setJogActive(true);
+      } else {
+        setHoverPos(null);
+      }
+      handlesRef.current?.setActiveJointGizmo?.(info?.jointName ?? null);
+    };
+
+    const handleJointSelect = (info: JointSelectionInfo | null) => {
+      setDragInfo(info);
+      if (info) {
+        setDragPos(clampCardPos(container, info.screenX, info.screenY));
+        setJogActive(true);
+      } else {
+        setDragPos(null);
+      }
+    };
+
+    const handleJointChange = (name: string, value: number) => {
+      setJointTarget(name, value);
+    };
+
+    const handleJointDragEnd = (name: string, value: number) => {
+      setJointTarget(name, value);
+      if (!useSimulationRef.current) {
+        const names = joints.map((j) => j.name);
+        const positions = names.map((n) => useRobotStore.getState().jointTargets[n] ?? 0);
+        try {
+          rosClientRef.current?.publishJointCommand(names, positions);
+        } catch {
+          // ROS not connected; ignore.
+        }
+      }
+    };
+
     const build = urdfUrl
-      ? createURDFScene(container, urdfUrl, { ...poseCallback, environment: sceneCallbacks })
+      ? createURDFScene(container, urdfUrl, {
+          ...poseCallback,
+          environment: sceneCallbacks,
+          joints,
+          links,
+          onJointHover: handleJointHover,
+          onJointSelect: handleJointSelect,
+          onJointChange: handleJointChange,
+          onJointDragEnd: handleJointDragEnd,
+        })
       : Promise.resolve(
           createFallbackScene(container, { ...poseCallback, environment: sceneCallbacks })
         );
@@ -216,6 +280,9 @@ export function RobotTwin({
       handlesRef.current = null;
       setReady(false);
     };
+    // The scene lifecycle is intentionally tied only to the URDF source.
+    // Joint/link metadata come from the same URDF and arrive together with urdfUrl.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urdfUrl]);
 
   // ---- high frequency data path (no React state) -------------------------
@@ -417,6 +484,96 @@ export function RobotTwin({
           {error}
         </div>
       )}
+
+      {hoverInfo && hoverPos && !dragInfo && (
+        <JointInspectorCard
+          info={hoverInfo}
+          style={{ left: hoverPos.x, top: hoverPos.y }}
+        />
+      )}
+      {dragInfo && dragPos && (
+        <JointInspectorCard
+          info={dragInfo}
+          style={{ left: dragPos.x, top: dragPos.y }}
+        />
+      )}
+    </div>
+  );
+}
+
+function clampCardPos(container: HTMLElement, screenX: number, screenY: number) {
+  const rect = container.getBoundingClientRect();
+  const CARD_W = 260;
+  const CARD_H = 210;
+  const margin = 8;
+  const x = Math.min(
+    Math.max(screenX - rect.left + 12, margin),
+    Math.max(rect.width - CARD_W - margin, margin)
+  );
+  const y = Math.min(
+    Math.max(screenY - rect.top + 12, margin),
+    Math.max(rect.height - CARD_H - margin, margin)
+  );
+  return { x, y };
+}
+
+function toRPY(q: THREE.Quaternion, degrees = false) {
+  const e = new THREE.Euler().setFromQuaternion(q, 'XYZ');
+  const scale = degrees ? 180 / Math.PI : 1;
+  return {
+    r: e.x * scale,
+    p: e.y * scale,
+    y: e.z * scale,
+  };
+}
+
+function JointInspectorCard({
+  info,
+  style,
+}: {
+  info: JointSelectionInfo;
+  style: React.CSSProperties;
+}) {
+  const rpyRad = toRPY(info.orientation, false);
+  const rpyDeg = toRPY(info.orientation, true);
+  return (
+    <div
+      className="pointer-events-none absolute z-10 max-w-[260px] rounded-lg bg-slate-900/90 p-3 text-xs shadow-xl ring-1 ring-slate-700 backdrop-blur"
+      style={style}
+    >
+      <div className="mb-2">
+        <div className="font-semibold text-sky-400">Link: {info.linkName}</div>
+      </div>
+      <div className="space-y-1 text-slate-300">
+        <div>
+          Joint: <span className="text-slate-200">{info.jointName}</span>{' '}
+          <span className="text-slate-500">({info.jointType})</span>
+        </div>
+        <div>Mass: {info.mass.toFixed(4)} kg</div>
+        <div>Position:</div>
+        <div className="pl-2 font-mono text-[10px] text-slate-400">
+          x={info.position.x.toFixed(4)} m · y={info.position.y.toFixed(4)} m · z=
+          {info.position.z.toFixed(4)} m
+        </div>
+        <div>Orientation:</div>
+        <div className="pl-2 font-mono text-[10px] text-slate-400">
+          Quat: x={info.orientation.x.toFixed(4)} y={info.orientation.y.toFixed(4)} z=
+          {info.orientation.z.toFixed(4)} w={info.orientation.w.toFixed(4)}
+        </div>
+        <div className="pl-2 font-mono text-[10px] text-slate-400">
+          RPY (rad): r={rpyRad.r.toFixed(4)} p={rpyRad.p.toFixed(4)} y={rpyRad.y.toFixed(4)}
+        </div>
+        <div className="pl-2 font-mono text-[10px] text-slate-400">
+          RPY (deg): r={rpyDeg.r.toFixed(4)} p={rpyDeg.p.toFixed(4)} y={rpyDeg.y.toFixed(4)}
+        </div>
+        <div>
+          Value:{' '}
+          <span className="font-mono text-cyan-400">
+            {info.value.toFixed(4)} {info.unit}
+          </span>
+        </div>
+        <div className="pt-1 text-[10px] text-slate-500">水平拖动控制关节角度</div>
+      </div>
     </div>
   );
 }

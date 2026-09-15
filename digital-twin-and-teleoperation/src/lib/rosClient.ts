@@ -194,7 +194,7 @@ const FALLBACK_JOINTS: URDFJointDefinition[] = [
   'joint3',
   'joint4',
   'joint5',
-].map((name) => ({
+].map((name, index) => ({
   name,
   type: 'revolute' as const,
   lower: -Math.PI,
@@ -202,6 +202,8 @@ const FALLBACK_JOINTS: URDFJointDefinition[] = [
   velocity: 1,
   effort: 10,
   axis: [0, 0, 1] as [number, number, number],
+  parent: index === 0 ? 'base' : `link${index}`,
+  child: `link${index + 1}`,
 }));
 
 /**

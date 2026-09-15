@@ -20,7 +20,7 @@ export function RobotViewer() {
   const [pathStats, setPathStats] = useState<{ points: number; length: number } | null>(null);
   const [safety, setSafety] = useState<SafetyReport | null>(null);
 
-  const { blobUrl, joints } = useURDFStore();
+  const { blobUrl, joints, links } = useURDFStore();
   const eStop = useRobotStore((s) => s.eStop);
   const addLog = useRobotStore((s) => s.addLog);
   const useSimulation = useConnectionStore((s) => s.useSimulation);
@@ -171,6 +171,7 @@ export function RobotViewer() {
         <RobotTwin
           urdfUrl={blobUrl}
           joints={joints}
+          links={links}
           trajectoryPath={trajectoryPath}
           playhead={playheadPoint}
           onPoseChange={handlePoseChange}
@@ -231,7 +232,7 @@ export function RobotViewer() {
           <Radio className="h-3 w-3" />
           /joint_states → 环形缓冲 + 帧内插值
         </span>
-        <span>点击末端小球召唤 Gizmo</span>
+        <span>点击模型关节可拖动 · 点击末端小球召唤 Gizmo</span>
       </div>
     </div>
   );

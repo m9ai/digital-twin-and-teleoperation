@@ -22,6 +22,16 @@ export interface URDFJointDefinition {
   velocity: number;
   effort: number;
   axis: [number, number, number];
+  /** Link that is the reference frame for this joint. */
+  parent: string;
+  /** Link moved by this joint (the one the user clicks on). */
+  child: string;
+}
+
+export interface URDFLinkDefinition {
+  name: string;
+  /** Kilograms from the first <inertial><mass>. */
+  mass: number;
 }
 
 export interface URDFValidationResult {
@@ -87,6 +97,10 @@ export function validateURDF(text: string): URDFValidationResult {
   return { ok: true, message: null, line: null };
 }
 
+function toLinkRef(value: string | null): string {
+  return value?.trim() ?? '';
+}
+
 /**
  * Extract every movable joint (revolute / continuous / prismatic) with its
  * URDF <limit> range. Fixed, floating and planar joints are ignored because
@@ -110,6 +124,9 @@ export function parseJointDefinitions(text: string): URDFJointDefinition[] {
     const limitNode = node.querySelector('limit');
     const isContinuous = type === 'continuous';
 
+    const parent = toLinkRef(node.querySelector('parent')?.getAttribute('link') ?? null);
+    const child = toLinkRef(node.querySelector('child')?.getAttribute('link') ?? null);
+
     joints.push({
       name,
       type,
@@ -118,10 +135,36 @@ export function parseJointDefinitions(text: string): URDFJointDefinition[] {
       velocity: toNumber(limitNode?.getAttribute('velocity') ?? null, 1),
       effort: toNumber(limitNode?.getAttribute('effort') ?? null, 10),
       axis: toAxis(node.querySelector('axis')?.getAttribute('xyz') ?? null),
+      parent,
+      child,
     });
   }
 
   return joints;
+}
+
+/**
+ * Extract link metadata needed for the interactive model inspector.
+ */
+export function parseLinkDefinitions(text: string): URDFLinkDefinition[] {
+  const validation = validateURDF(text);
+  if (!validation.ok) return [];
+
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  const linkNodes = Array.from(doc.querySelectorAll('link'));
+  const links: URDFLinkDefinition[] = [];
+
+  for (const node of linkNodes) {
+    const name = node.getAttribute('name');
+    if (!name) continue;
+
+    const massNode = node.querySelector('inertial mass');
+    const mass = toNumber(massNode?.getAttribute('value') ?? null, 0);
+
+    links.push({ name, mass });
+  }
+
+  return links;
 }
 
 export function clampToJointLimits(joint: URDFJointDefinition, value: number): number {
