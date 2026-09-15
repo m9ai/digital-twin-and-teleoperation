@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Maximize2, Spline, ShieldAlert, Radio } from 'lucide-react';
 import * as THREE from 'three';
+import { SceneQuickSettings } from '@/components/SceneQuickSettings';
+import { useSceneStore } from '@/store/sceneStore';
 import { RobotTwin } from '@/components/RobotTwin';
 import { useRobotStore } from '@/store/robotStore';
 import { useURDFStore } from '@/store/urdfStore';
@@ -8,7 +10,7 @@ import { useRecordingStore } from '@/store/recordingStore';
 import { useConnectionStore } from '@/store/connectionStore';
 import { sampleTrajectory } from '@/lib/trajectory';
 import { rosClientRef } from '@/lib/rosRef';
-import type { Pose, SafetyReport } from '@/types';
+import type { EnvironmentSettings, Pose, SafetyReport } from '@/types';
 
 /** Cap FK samples so a long recording cannot stall the UI thread. */
 const MAX_PATH_POINTS = 300;
@@ -22,6 +24,30 @@ export function RobotViewer() {
   const eStop = useRobotStore((s) => s.eStop);
   const addLog = useRobotStore((s) => s.addLog);
   const useSimulation = useConnectionStore((s) => s.useSimulation);
+
+  // Scene store snapshot → a stable settings object for the environment rig.
+  // Primitive dependencies keep the identity stable across unrelated edits.
+  const preset = useSceneStore((s) => s.preset);
+  const gridVisible = useSceneStore((s) => s.gridVisible);
+  const gridSize = useSceneStore((s) => s.gridSize);
+  const gridDivisions = useSceneStore((s) => s.gridDivisions);
+  const axesVisible = useSceneStore((s) => s.axesVisible);
+  const background = useSceneStore((s) => s.background);
+  const lighting = useSceneStore((s) => s.lighting);
+  const sceneSafety = useSceneStore((s) => s.safety);
+  const customScenes = useSceneStore((s) => s.scenes);
+
+  const environment = useMemo<EnvironmentSettings>(
+    () => ({
+      preset,
+      grid: { visible: gridVisible, size: gridSize, divisions: gridDivisions },
+      axes: axesVisible,
+      background,
+      lighting,
+      safety: sceneSafety,
+    }),
+    [preset, gridVisible, gridSize, gridDivisions, axesVisible, background, lighting, sceneSafety]
+  );
 
   const library = useRecordingStore((s) => s.library);
   const selectedId = useRecordingStore((s) => s.selectedId);
@@ -110,11 +136,13 @@ export function RobotViewer() {
 
   const violations = safety
     ? safety.joints.filter((j) => j.level === 'violation').length +
-      safety.proximity.filter((p) => p.level === 'violation').length
+      safety.proximity.filter((p) => p.level === 'violation').length +
+      safety.obstacles.filter((p) => p.level === 'violation').length
     : 0;
   const warnings = safety
     ? safety.joints.filter((j) => j.level === 'warn').length +
-      safety.proximity.filter((p) => p.level === 'warn').length
+      safety.proximity.filter((p) => p.level === 'warn').length +
+      safety.obstacles.filter((p) => p.level === 'warn').length
     : 0;
 
   return (
@@ -147,12 +175,18 @@ export function RobotViewer() {
           playhead={playheadPoint}
           onPoseChange={handlePoseChange}
           onSafety={handleSafety}
+          environment={environment}
+          customScenes={customScenes}
+          onSceneReady={(id, stats) => useSceneStore.getState().markSceneReady(id, stats)}
+          onSceneError={(id, message) => useSceneStore.getState().markSceneError(id, message)}
           className="absolute inset-0"
           onReady={(handles) => {
             handlesRef.current = handles;
             setReady(true);
           }}
         />
+
+        <SceneQuickSettings />
 
         {showPath && pathStats && (
           <div className="pointer-events-none absolute left-2 top-2 rounded bg-slate-900/80 px-2 py-1 text-[10px] text-cyan-300 ring-1 ring-cyan-500/30">
@@ -170,12 +204,16 @@ export function RobotViewer() {
             title={safety
               ? [
                   ...safety.joints.map((j) => `${j.joint} ${j.value.toFixed(2)} ∉ [${j.lower.toFixed(2)}, ${j.upper.toFixed(2)}]`),
-                  ...safety.proximity.map((p) => `${p.a} ↔ ${p.b} 间距 ${(p.distance * 1000).toFixed(0)} mm`),
+                  ...safety.proximity.map((p) => `自碰 ${p.a} ↔ ${p.b} 间距 ${(p.distance * 1000).toFixed(0)} mm`),
+                  ...safety.obstacles.map((p) => `场景 ${p.a} ↔ ${p.b} 间距 ${(p.distance * 1000).toFixed(0)} mm`),
                 ].join('\n')
               : undefined}
           >
             <ShieldAlert className="h-3 w-3" />
             {violations > 0 ? `${violations} 处越限 / 碰撞` : `${warnings} 处接近限界`}
+            {safety && safety.obstacles.length > 0 && (
+              <span className="ml-1 opacity-70">· 场景 {safety.obstacles.length}</span>
+            )}
           </div>
         )}
 

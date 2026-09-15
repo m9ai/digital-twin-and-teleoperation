@@ -71,8 +71,9 @@ ros2 topic pub /joint_states sensor_msgs/JointState "{name: ['base_link_to_link1
 src/
   components/     # UI 组件（RobotViewer、JointJogPanel、URDFEditor…）
   hooks/          # useROS、useGamepad、useHeartbeat、useWebRTC、useTrajectoryRecorder、useTrajectoryPlayback
+  lib/scene/      # 场景套件：environmentRig（灯光/背景/网格/场景模型）、environmentPresets（程序化环境）
   lib/            # ROS 客户端、URDF 场景、URDF 关节解析、全局引用
-  store/          # Zustand 状态（机器人、连接、URDF）
+  store/          # Zustand 状态（机器人、连接、URDF、场景）
   types/          # TypeScript 类型
 public/
   assets/         # URDF / Mesh 资源
@@ -83,6 +84,17 @@ public/
   sitemap.xml
 ```
 
+## 三维工作场景
+
+机器人从不孤立工作：视口右下角「场景」按钮可在环境间快速切换，右侧「场景 Scene」面板提供完整配置。切换预设会连带套用配套的光照与背景氛围，之后仍可逐项微调。
+
+- **内置环境**（`src/lib/scene/environmentPresets.ts` 程序化生成，单位米 / Y-up / 基座在原点，无需外部资源）：空场景；车间（环氧地坪 + 警戒线 + 围栏 + 工作台 + 货架 + 托盘）；房间（墙体 + 门洞 + 玻璃窗 + 家具）；街道（沥青车道 + 车道线 + 斑马线 + 人行道 + 路灯 + 行道树 + 公交站亭）；实验室（洁净地板 + 光学平台 + 机柜 + 白板）。
+
+- **自定义场景**：拖入或上传 `.glb` / `.gltf`，自动把任意建模单位归一化（按最长边缩放到目标米数）、模型落到地面并对中机器人，随后可用 X/Y/Z、绕 Y 旋转、缩放微调；上传后可逐个显隐、删除，并显示 mesh 数 / 三角面数 / 包围盒尺寸。Z-up 源文件可一键翻转。
+
+- **画面与光照**：地面网格（边长 / 密度）、坐标轴、投影阴影开关；背景可选影棚 / 日光 / 夜间 / 透明；基于 `RoomEnvironment` 的 IBL 环境反射（PBR 金属件质感）、环境光 / 主光方位角 / 仰角 / 强度 / 曝光均可调。
+
+- **场景安全**：静态道具（墙体、围栏、工作台、标牌等，地面除外）注册为障碍，8 Hz 参与机器人接近检测。命中时对应连杆染色，视口安全角标显示「场景 N」。球体包围盒近似，最适合用于示教时的粗筛，不作为精确碰撞判定。可通过面板开关与报警间距调节。
 ## 关节 Jog 说明
 
 - 点击「接管关节」后，滑块目标值会覆盖仿真生成的位置，数字孪生立即跟随。
@@ -151,6 +163,7 @@ ros2 topic echo /joint_command
 ## 核心功能
 
 - URDF/XACRO 机器人模型加载与关节联动
+- 三维工作场景：内置车间 / 房间 / 街道 / 实验室，支持上传自定义 glTF / GLB 场景模型
 - `/joint_states` 实时同步 Three.js 数字孪生
 - URDF 在线编辑（Monaco）：XML 语法校验（含出错行号）、显式「应用到数字孪生」、还原与导出
 - 关节 Jog 点动控制：滑块范围直接取自 URDF `<limit>`，仿真模式直驱数字孪生，Live 模式下发 `/joint_command`

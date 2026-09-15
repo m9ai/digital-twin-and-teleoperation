@@ -3,6 +3,11 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import URDFLoader from 'urdf-loader';
 import { loadRobotMesh } from '@/lib/scene/modelLoader';
 import {
+  createEnvironmentRig,
+  type EnvironmentRig,
+  type EnvironmentRigCallbacks,
+} from '@/lib/scene/environmentRig';
+import {
   createSceneRuntime,
   type FrameCallback,
   type SceneRuntime,
@@ -42,6 +47,8 @@ export interface SceneHandles {
   setPathPlayhead: (point: THREE.Vector3 | null) => void;
   /** Render loop, gizmo, camera presets and safety highlighting. */
   runtime: SceneRuntime | null;
+  /** Scene in which the robot operates: lights, backdrop and static props. */
+  environment: EnvironmentRig;
 }
 
 /** The last link of the kinematic chain: a link that is no joint's parent. */
@@ -129,23 +136,35 @@ interface SceneShell {
   camera: THREE.PerspectiveCamera;
   renderer: THREE.WebGLRenderer;
   controls: OrbitControls;
-  grid: THREE.GridHelper;
+  /** Lights, backdrop, grid and generated / uploaded scenery. */
+  environment: EnvironmentRig;
 }
 
-function createSceneShell(container: HTMLElement, options: { shadows?: boolean } = {}): SceneShell {
+/**
+ * Renderer + camera + orbit controls, plus the environment rig.
+ *
+ * Lighting deliberately lives in the rig rather than here: scene presets must
+ * be swappable at runtime without rebuilding the renderer or the URDF.
+ */
+function createSceneShell(
+  container: HTMLElement,
+  callbacks: EnvironmentRigCallbacks = {}
+): SceneShell {
   const width = Math.max(container.clientWidth, 1);
   const height = Math.max(container.clientHeight, 1);
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0f172a);
 
-  const camera = new THREE.PerspectiveCamera(50, width / height, 0.01, 100);
+  const camera = new THREE.PerspectiveCamera(50, width / height, 0.01, 200);
   camera.position.set(1.5, 1.2, 2);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setSize(width, height);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  if (options.shadows) renderer.shadowMap.enabled = true;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
   container.appendChild(renderer.domElement);
 
   const controls = new OrbitControls(camera, renderer.domElement);
@@ -153,40 +172,23 @@ function createSceneShell(container: HTMLElement, options: { shadows?: boolean }
   controls.dampingFactor = 0.05;
   controls.target.set(0, 0.5, 0);
 
-  const ambient = new THREE.AmbientLight(0xffffff, options.shadows ? 0.4 : 0.6);
-  scene.add(ambient);
+  const environment = createEnvironmentRig({ scene, renderer, ...callbacks });
 
-  if (options.shadows) {
-    const hemisphere = new THREE.HemisphereLight(0xdbeafe, 0x1e293b, 0.8);
-    scene.add(hemisphere);
-
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
-    dirLight.position.set(3, 5, 3);
-    dirLight.castShadow = true;
-    scene.add(dirLight);
-
-    const fillLight = new THREE.DirectionalLight(0xa5f3fc, 0.6);
-    fillLight.position.set(-3, 2, -3);
-    scene.add(fillLight);
-  } else {
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-    dirLight.position.set(2, 4, 2);
-    scene.add(dirLight);
-  }
-
-  const grid = new THREE.GridHelper(10, 50, 0x334155, 0x1e293b);
-  scene.add(grid);
-
-  return { scene, camera, renderer, controls, grid };
+  return { scene, camera, renderer, controls, environment };
 }
 
 export function createURDFScene(
   container: HTMLElement,
   urdfUrl: string,
-  options: { onPoseChange?: (pose: Pose, phase: 'drag' | 'end') => void } = {}
+  options: {
+    onPoseChange?: (pose: Pose, phase: 'drag' | 'end') => void;
+    environment?: EnvironmentRigCallbacks;
+  } = {}
 ): Promise<SceneHandles> {
-  const { scene, camera, renderer, controls } = createSceneShell(container, { shadows: true });
-  scene.add(new THREE.AxesHelper(0.5));
+  const { scene, camera, renderer, controls, environment } = createSceneShell(
+    container,
+    options.environment ?? {}
+  );
 
   let robot: THREE.Object3D | null = null;
   let runtime: SceneRuntime | null = null;
@@ -323,6 +325,7 @@ export function createURDFScene(
         const dispose = () => {
           runtime?.dispose();
           overlay.dispose();
+          environment.dispose();
           controls.dispose();
           renderer.dispose();
           if (container.contains(renderer.domElement)) {
@@ -347,6 +350,7 @@ export function createURDFScene(
           setTrajectoryPath: overlay.setTrajectoryPath,
           setPathPlayhead: overlay.setPathPlayhead,
           runtime,
+          environment,
         });
       })
       .catch((err: unknown) => reject(err));
@@ -355,9 +359,15 @@ export function createURDFScene(
 
 export function createFallbackScene(
   container: HTMLElement,
-  options: { onPoseChange?: (pose: Pose, phase: 'drag' | 'end') => void } = {}
+  options: {
+    onPoseChange?: (pose: Pose, phase: 'drag' | 'end') => void;
+    environment?: EnvironmentRigCallbacks;
+  } = {}
 ): SceneHandles {
-  const { scene, camera, renderer, controls } = createSceneShell(container);
+  const { scene, camera, renderer, controls, environment } = createSceneShell(
+    container,
+    options.environment ?? {}
+  );
 
   const robotGroup = new THREE.Group();
   robotGroup.name = 'fallback_robot';
@@ -573,9 +583,11 @@ export function createFallbackScene(
     setTrajectoryPath: overlay.setTrajectoryPath,
     setPathPlayhead: overlay.setPathPlayhead,
     runtime,
+    environment,
     dispose: () => {
       runtime.dispose();
       overlay.dispose();
+      environment.dispose();
       controls.dispose();
       renderer.dispose();
       if (container.contains(renderer.domElement)) {

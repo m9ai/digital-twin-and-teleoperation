@@ -9,6 +9,7 @@ import { TrajectoryPanel } from './components/TrajectoryPanel';
 import { ConnectionBar } from './components/ConnectionBar';
 import { PWABadge } from './components/PWABadge';
 import { URDFUploadPanel } from './components/URDFUploadPanel';
+import { ScenePanel } from './components/ScenePanel';
 import { useROS } from './hooks/useROS';
 import { useHeartbeat } from './hooks/useHeartbeat';
 import { useTrajectoryRecorder } from './hooks/useTrajectoryRecorder';
@@ -49,6 +50,7 @@ function App() {
           </div>
           <div className="flex flex-col gap-4 min-h-0 overflow-y-auto">
             <URDFUploadPanel />
+            <ScenePanel />
             <VideoWall />
             <TelemetryPanel />
             <ControlDesk />

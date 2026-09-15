@@ -16,9 +16,21 @@ import {
 } from '@/lib/urdfScene';
 import { JointStateStream } from '@/lib/jointStream';
 import { subscribeJointState } from '@/lib/jointBus';
-import { detectLinkProximity, evaluateJointLimits } from '@/lib/safetyMonitor';
+import {
+  detectLinkProximity,
+  detectObstacleProximity,
+  evaluateJointLimits,
+} from '@/lib/safetyMonitor';
 import type { SafetyHighlightEntry } from '@/lib/scene/safetyHighlight';
-import type { CameraPresetId, GizmoMode, Pose, SafetyReport } from '@/types';
+import type {
+  CameraPresetId,
+  CustomScene,
+  CustomSceneStats,
+  EnvironmentSettings,
+  GizmoMode,
+  Pose,
+  SafetyReport,
+} from '@/types';
 import type { URDFJointDefinition } from '@/lib/urdfJoints';
 
 /**
@@ -55,6 +67,14 @@ export interface RobotTwinProps {
   showToolbar?: boolean;
   /** Access to the underlying scene handles once the model is ready. */
   onReady?: (handles: SceneHandles) => void;
+  /** Decorative + lighting environment; applied without rebuilding the robot. */
+  environment?: EnvironmentSettings;
+  /** User uploaded scene models placed around the robot. */
+  customScenes?: CustomScene[];
+  /** Report a decoded scene model back to the store (size, triangle count). */
+  onSceneReady?: (id: string, stats: CustomSceneStats) => void;
+  /** Report a scene model that failed to parse. */
+  onSceneError?: (id: string, message: string) => void;
   /**
    * Layout classes for the root element. It must define a height — either
    * `absolute inset-0` inside a positioned parent, or `relative h-full w-full`.
@@ -83,6 +103,10 @@ export function RobotTwin({
   interpolationDelayMs = 80,
   showToolbar = true,
   onReady,
+  environment,
+  customScenes,
+  onSceneReady,
+  onSceneError,
   className = 'relative h-full w-full',
 }: RobotTwinProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -103,6 +127,16 @@ export function RobotTwin({
   safetyHandlerRef.current = onSafety;
   const readyHandlerRef = useRef(onReady);
   readyHandlerRef.current = onReady;
+  const sceneReadyRef = useRef(onSceneReady);
+  sceneReadyRef.current = onSceneReady;
+  const sceneErrorRef = useRef(onSceneError);
+  sceneErrorRef.current = onSceneError;
+  // The rig reads the latest snapshot when it is rebuilt, keeping the scene
+  // lifecycle dependent on `urdfUrl` alone.
+  const environmentRef = useRef(environment);
+  environmentRef.current = environment;
+  const customScenesRef = useRef(customScenes);
+  customScenesRef.current = customScenes;
 
   const continuousJoints = useMemo(
     () => new Set(joints.filter((j) => j.type === 'continuous').map((j) => j.name)),
@@ -140,6 +174,10 @@ export function RobotTwin({
       }
       handlesRef.current = handles;
       handles.runtime?.setFollowChangeHandler(setFollowing);
+      // Restore the workspace before the first frame so the robot is never
+      // briefly rendered in an empty void.
+      if (environmentRef.current) handles.environment.apply(environmentRef.current);
+      handles.environment.syncCustomScenes(customScenesRef.current ?? []);
       setReady(true);
       readyHandlerRef.current?.(handles);
 
@@ -148,14 +186,18 @@ export function RobotTwin({
       handles.resize();
     };
 
+    const sceneCallbacks = {
+      onSceneReady: (id: string, stats: CustomSceneStats) => sceneReadyRef.current?.(id, stats),
+      onSceneError: (id: string, message: string) => sceneErrorRef.current?.(id, message),
+    };
+    const poseCallback = {
+      onPoseChange: (pose: Pose, phase: 'drag' | 'end') => poseHandlerRef.current?.(pose, phase),
+    };
+
     const build = urdfUrl
-      ? createURDFScene(container, urdfUrl, {
-          onPoseChange: (pose, phase) => poseHandlerRef.current?.(pose, phase),
-        })
+      ? createURDFScene(container, urdfUrl, { ...poseCallback, environment: sceneCallbacks })
       : Promise.resolve(
-          createFallbackScene(container, {
-            onPoseChange: (pose, phase) => poseHandlerRef.current?.(pose, phase),
-          })
+          createFallbackScene(container, { ...poseCallback, environment: sceneCallbacks })
         );
 
     build
@@ -164,11 +206,7 @@ export function RobotTwin({
         console.warn('[RobotTwin] URDF load failed, using fallback scene:', err);
         if (disposed) return;
         setError('URDF unavailable; fallback model in use');
-        attach(
-          createFallbackScene(container, {
-            onPoseChange: (pose, phase) => poseHandlerRef.current?.(pose, phase),
-          })
-        );
+        attach(createFallbackScene(container, { ...poseCallback, environment: sceneCallbacks }));
       });
 
     return () => {
@@ -205,6 +243,17 @@ export function RobotTwin({
     return () => window.clearInterval(id);
   }, [stream]);
 
+  // ---- environment reconciliation ---------------------------------------
+  useEffect(() => {
+    if (!ready || !environment) return;
+    handlesRef.current?.environment.apply(environment);
+  }, [environment, ready]);
+
+  useEffect(() => {
+    if (!ready) return;
+    handlesRef.current?.environment.syncCustomScenes(customScenes ?? []);
+  }, [customScenes, ready]);
+
   // ---- safety evaluation -------------------------------------------------
   useEffect(() => {
     if (!ready) return;
@@ -224,10 +273,21 @@ export function RobotTwin({
       });
 
       const jointWarnings = evaluateJointLimits(joints, byName);
+      const links = runtime.getLinkNodes();
       const proximity = detectLinkProximity({
-        links: runtime.getLinkNodes(),
+        links,
         adjacent: runtime.getAdjacentPairs(),
       });
+
+      // Scene contacts are opt-in: scanning the whole environment every pass
+      // costs nothing for a human but plenty for untrusted uploaded models.
+      const obstacles = environmentRef.current?.safety.obstacleCheck
+        ? detectObstacleProximity({
+            links,
+            obstacles: handles.environment.getObstacleNodes(),
+            warnDistance: environmentRef.current.safety.warnDistance,
+          })
+        : [];
 
       const entries: SafetyHighlightEntry[] = [
         ...jointWarnings.map((warning) => ({ joint: warning.joint, level: warning.level })),
@@ -238,10 +298,12 @@ export function RobotTwin({
             { link: pair.b, level } as SafetyHighlightEntry,
           ];
         }),
+        // Only the robot side of an obstacle contact can be tinted.
+        ...obstacles.map((pair) => ({ link: pair.a, level: pair.level }) as SafetyHighlightEntry),
       ];
       runtime.setSafetyWarnings(entries);
 
-      safetyHandlerRef.current?.({ joints: jointWarnings, proximity, at: Date.now() });
+      safetyHandlerRef.current?.({ joints: jointWarnings, proximity, obstacles, at: Date.now() });
     }, SAFETY_INTERVAL_MS);
 
     return () => window.clearInterval(id);

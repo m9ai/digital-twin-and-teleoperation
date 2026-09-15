@@ -60,7 +60,88 @@ export interface LinkProximity {
 export interface SafetyReport {
   joints: JointLimitWarning[];
   proximity: LinkProximity[];
+  /** Robot link ↔ static scene obstacle contacts (opt-in per environment). */
+  obstacles: LinkProximity[];
   at: number;
+}
+
+/* ------------------------------------------------------------------ *
+ * Scene / environment
+ * ------------------------------------------------------------------ */
+
+/** Built-in environments procedurally generated in the browser. */
+export type EnvironmentPresetId = 'none' | 'workshop' | 'room' | 'street' | 'lab';
+
+/** Viewport backdrop. Rendered as a vertical gradient / sky quad. */
+export type SceneBackgroundId = 'studio' | 'night' | 'daylight' | 'transparent';
+
+/** Placement of a user supplied scene model, applied on top of auto-fit. */
+export interface CustomSceneTransform {
+  x: number;
+  y: number;
+  z: number;
+  rotationY: number;
+  scale: number;
+}
+
+export type CustomSceneStatus = 'loading' | 'ready' | 'error';
+
+export interface CustomSceneStats {
+  meshes: number;
+  triangles: number;
+  /** Bounding box size in metres after normalization. */
+  size: [number, number, number];
+}
+
+/** A user uploaded 3D scene (.glb / .gltf) placed around the robot. */
+export interface CustomScene {
+  id: string;
+  /** Original file name. */
+  name: string;
+  /** Object URL of the uploaded file. */
+  url: string;
+  visible: boolean;
+  /** Normalize any authoring unit / origin so the model lands around the robot. */
+  autoFit: boolean;
+  /** Longest edge in metres used when `autoFit` is on. */
+  targetSize: number;
+  /** Rotate -90° about X: for scenes exported from a Z-up tool. */
+  zUp: boolean;
+  transform: CustomSceneTransform;
+  status: CustomSceneStatus;
+  error?: string;
+  stats?: CustomSceneStats;
+}
+
+export interface SceneLightingConfig {
+  /** Compass direction of the key light, degrees. */
+  azimuthDeg: number;
+  /** Height of the key light above the horizon, degrees. */
+  elevationDeg: number;
+  intensity: number;
+  ambient: number;
+  /** Image based lighting from a procedural room HDR. */
+  envMap: boolean;
+  envIntensity: number;
+  exposure: number;
+  shadows: boolean;
+}
+
+export interface SceneSafetyConfig {
+  /** Include scene obstacles in the proximity scan. */
+  obstacleCheck: boolean;
+  /** Gap below which a robot link reports a scene contact warning. */
+  warnDistance: number;
+}
+
+/** Snapshot of everything the environment rig needs to render a scene. */
+export interface EnvironmentSettings {
+  preset: EnvironmentPresetId;
+  grid: { visible: boolean; size: number; divisions: number };
+  axes: boolean;
+  background: SceneBackgroundId;
+  lighting: SceneLightingConfig;
+  safety: SceneSafetyConfig;
 }
 
 /** 可复用的相机预设编号。 */
