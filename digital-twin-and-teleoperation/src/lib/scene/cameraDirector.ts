@@ -21,8 +21,11 @@ export interface CameraDirectorOptions {
   onFollowChange?: (following: boolean) => void;
 }
 
+export type StandardViewAxis = '+X' | '-X' | '+Y' | '-Y' | '+Z' | '-Z';
+
 export interface CameraDirectorHandles {
   applyPreset: (preset: CameraPresetId, animate?: boolean) => void;
+  applyStandardView: (axis: StandardViewAxis, animate?: boolean) => void;
   setFollow: (follow: boolean) => void;
   isFollowing: () => boolean;
   /** Advance tweens / follow damping. Call once per rendered frame. */
@@ -90,10 +93,8 @@ export function createCameraDirector(options: CameraDirectorOptions): CameraDire
     }
 
     if (preset === 'top') {
-      return {
-        position: center.clone().add(new THREE.Vector3(0, safeRadius * 2.8, 0.001)),
-        target: center.clone(),
-      };
+      // With Z as the vertical axis, the top-down view is the +Z standard view.
+      return null;
     }
 
     // head / tcp are TCP anchored.
@@ -119,9 +120,43 @@ export function createCameraDirector(options: CameraDirectorOptions): CameraDire
     };
   };
 
+  const applyStandardView = (axis: StandardViewAxis, animate = true) => {
+    const { center, radius } = getBounds();
+    const safeRadius = Number.isFinite(radius) && radius > 0 ? radius : 1;
+
+    // Map the selected axis to a camera position on that axis looking back
+    // toward the origin of the model bounds.
+    const direction = new THREE.Vector3(
+      axis === '+X' ? 1 : axis === '-X' ? -1 : 0,
+      axis === '+Y' ? 1 : axis === '-Y' ? -1 : 0,
+      axis === '+Z' ? 1 : axis === '-Z' ? -1 : 0
+    );
+
+    // Use a right-handed Z-up convention: +Z / -Z are top/bottom views, so the
+    // screen top should point along +Y (a horizontal axis). For all side views
+    // (+Y / -Y / +X / -X) the screen top should point along +Z (world up).
+    const up = axis === '+Z' || axis === '-Z'
+      ? new THREE.Vector3(0, 1, 0)
+      : new THREE.Vector3(0, 0, 1);
+
+    const position = center.clone().addScaledVector(direction, safeRadius * 2.6);
+    const target = center.clone();
+
+    setFollow(false);
+    camera.up.copy(up);
+    startTween(position, target, animate);
+  };
+
   const applyPreset = (preset: CameraPresetId, animate = true) => {
+    if (preset === 'top') {
+      applyStandardView('+Z', animate);
+      return;
+    }
+
     const view = computePreset(preset);
     if (!view) return;
+
+    camera.up.set(0, 1, 0);
 
     if (preset === 'tcp') {
       startTween(view.position, view.target, animate);
@@ -183,5 +218,5 @@ export function createCameraDirector(options: CameraDirectorOptions): CameraDire
     controls.enabled = true;
   };
 
-  return { applyPreset, setFollow, isFollowing: () => following, update, dispose };
+  return { applyPreset, applyStandardView, setFollow, isFollowing: () => following, update, dispose };
 }

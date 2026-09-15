@@ -1,7 +1,11 @@
 import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { createTCPGizmo, type TCPGizmoHandles } from '@/lib/scene/tcpGizmo';
-import { createCameraDirector, type CameraDirectorHandles } from '@/lib/scene/cameraDirector';
+import {
+  createCameraDirector,
+  type CameraDirectorHandles,
+  type StandardViewAxis,
+} from '@/lib/scene/cameraDirector';
 import { createSafetyHighlighter, type SafetyHighlightEntry } from '@/lib/scene/safetyHighlight';
 import {
   collectAdjacentPairs,
@@ -49,6 +53,7 @@ export interface SceneRuntime {
   setGizmoSpace: (space: 'world' | 'local') => void;
   isGizmoEnabled: () => boolean;
   applyCameraPreset: (preset: CameraPresetId, animate?: boolean) => void;
+  applyStandardView: (axis: StandardViewAxis, animate?: boolean) => void;
   setCameraFollow: (follow: boolean) => void;
   isCameraFollowing: () => boolean;
   setFollowChangeHandler: (cb: ((following: boolean) => void) | null) => void;
@@ -149,6 +154,7 @@ export function createSceneRuntime(options: SceneRuntimeOptions): SceneRuntime {
     setGizmoSpace: (space) => gizmo?.setSpace(space),
     isGizmoEnabled: () => gizmo?.isEnabled() ?? false,
     applyCameraPreset: (preset, animate = true) => director.applyPreset(preset, animate),
+    applyStandardView: (axis, animate = true) => director.applyStandardView(axis, animate),
     setCameraFollow: (follow) => director.setFollow(follow),
     isCameraFollowing: () => director.isFollowing(),
     setFollowChangeHandler: (cb) => {

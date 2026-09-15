@@ -6,8 +6,9 @@ import {
   Move3d,
   Rotate3d,
   Video,
-  Scan,
   AlertTriangle,
+  Axis3D,
+  Check,
 } from 'lucide-react';
 import {
   createFallbackScene,
@@ -23,6 +24,7 @@ import {
 } from '@/lib/safetyMonitor';
 import type { SafetyHighlightEntry } from '@/lib/scene/safetyHighlight';
 import type { JointSelectionInfo } from '@/lib/scene/jointInteraction';
+import type { StandardViewAxis } from '@/lib/scene/cameraDirector';
 import type {
   CameraPresetId,
   CustomScene,
@@ -95,8 +97,16 @@ const STREAM_CAPACITY = 160;
 const CAMERA_PRESETS: Array<{ id: CameraPresetId; label: string; icon: typeof Box }> = [
   { id: 'perspective', label: 'Perspective', icon: Box },
   { id: 'head', label: 'Head-Cam', icon: Video },
-  { id: 'top', label: 'Top-Down', icon: Scan },
   { id: 'tcp', label: 'TCP-Follow', icon: Crosshair },
+];
+
+const STANDARD_VIEWS: Array<{ axis: StandardViewAxis; label: string }> = [
+  { axis: '+Z', label: '+Z' },
+  { axis: '-Z', label: '-Z' },
+  { axis: '+Y', label: '+Y' },
+  { axis: '-Y', label: '-Y' },
+  { axis: '+X', label: '+X' },
+  { axis: '-X', label: '-X' },
 ];
 
 export function RobotTwin({
@@ -123,6 +133,8 @@ export function RobotTwin({
   const [gizmoOn, setGizmoOn] = useState(false);
   const [gizmoMode, setGizmoMode] = useState<GizmoMode>('translate');
   const [preset, setPreset] = useState<CameraPresetId>('perspective');
+  const [standardView, setStandardView] = useState<StandardViewAxis | null>(null);
+  const [showStandardViews, setShowStandardViews] = useState(false);
   const [following, setFollowing] = useState(false);
   const [inputRateHz, setInputRateHz] = useState(0);
   const [hoverInfo, setHoverInfo] = useState<JointSelectionInfo | null>(null);
@@ -387,7 +399,15 @@ export function RobotTwin({
 
   const applyPreset = (id: CameraPresetId) => {
     setPreset(id);
+    setStandardView(null);
     handlesRef.current?.runtime?.applyCameraPreset(id, true);
+  };
+
+  const applyStandardView = (axis: StandardViewAxis) => {
+    setStandardView(axis);
+    setPreset('perspective');
+    setShowStandardViews(false);
+    handlesRef.current?.runtime?.applyStandardView(axis, true);
   };
 
   const toggleGizmo = () => {
@@ -431,6 +451,41 @@ export function RobotTwin({
               </button>
             );
           })}
+
+          <span className="mx-1 h-4 w-px bg-slate-700" />
+
+          <div className="relative">
+            <button
+              onClick={() => setShowStandardViews((v) => !v)}
+              title="标准正交视图"
+              className={`flex items-center gap-1 whitespace-nowrap rounded px-2 py-1 text-[10px] font-medium transition-colors ${
+                standardView
+                  ? 'bg-cyan-600/25 text-cyan-300 ring-1 ring-cyan-500/40'
+                  : 'text-slate-400 hover:bg-slate-700/70 hover:text-slate-200'
+              }`}
+            >
+              <Axis3D className="h-3 w-3" />
+              {standardView ?? '视图'}
+            </button>
+            {showStandardViews && (
+              <div className="absolute bottom-full left-0 mb-1 flex flex-col rounded-lg bg-slate-900/95 p-1 ring-1 ring-slate-700 shadow-xl backdrop-blur">
+                {STANDARD_VIEWS.map(({ axis, label }) => (
+                  <button
+                    key={axis}
+                    onClick={() => applyStandardView(axis)}
+                    className={`flex items-center justify-between gap-3 rounded px-2 py-1 text-[10px] font-medium transition-colors ${
+                      standardView === axis
+                        ? 'bg-cyan-600/25 text-cyan-300'
+                        : 'text-slate-300 hover:bg-slate-700/70 hover:text-slate-100'
+                    }`}
+                  >
+                    <span className="whitespace-nowrap">{label}</span>
+                    {standardView === axis && <Check className="h-3 w-3" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
           <span className="mx-1 h-4 w-px bg-slate-700" />
 
