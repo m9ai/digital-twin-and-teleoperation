@@ -4,6 +4,7 @@ import {
   Box,
   Cloud,
   Crosshair,
+  GitBranch,
   Move3d,
   Rotate3d,
   Video,
@@ -140,6 +141,7 @@ export function RobotTwin({
   const [standardView, setStandardView] = useState<StandardViewAxis | null>(null);
   const [showStandardViews, setShowStandardViews] = useState(false);
   const [pointCloudVisible, setPointCloudVisible] = useState(false);
+  const [jointAxesVisible, setJointAxesVisible] = useState(false);
   const [following, setFollowing] = useState(false);
   const [inputRateHz, setInputRateHz] = useState(0);
   const [hoverInfo, setHoverInfo] = useState<JointSelectionInfo | null>(null);
@@ -426,6 +428,12 @@ export function RobotTwin({
     handlesRef.current?.setPointCloudVisible(next);
   };
 
+  const toggleJointAxes = () => {
+    const next = !jointAxesVisible;
+    setJointAxesVisible(next);
+    handlesRef.current?.setAllJointGizmosVisible(next);
+  };
+
   const toggleGizmo = () => {
     const next = !gizmoOn;
     handlesRef.current?.runtime?.setGizmoEnabled(next);
@@ -522,16 +530,31 @@ export function RobotTwin({
           <span className="mx-1 h-4 w-px bg-slate-700" />
 
           <button
+            onClick={toggleJointAxes}
+            title="显示 / 隐藏所有关节坐标轴"
+            className={`flex items-center gap-1 whitespace-nowrap rounded px-2 py-1 text-[10px] font-medium transition-colors ${
+              jointAxesVisible
+                ? 'bg-emerald-500/25 text-emerald-300 ring-1 ring-emerald-500/40'
+                : 'text-slate-400 hover:bg-slate-700/70 hover:text-slate-200'
+            }`}
+          >
+            <GitBranch className="h-3 w-3" />
+            关节轴
+          </button>
+
+          <span className="mx-1 h-4 w-px bg-slate-700" />
+
+          <button
             onClick={toggleGizmo}
             title="点击 TCP 或此处召唤三维姿态轴"
-            className={`flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium transition-colors ${
+            className={`flex items-center gap-1 whitespace-nowrap rounded px-2 py-1 text-[10px] font-medium transition-colors ${
               gizmoOn
                 ? 'bg-amber-500/25 text-amber-300 ring-1 ring-amber-500/40'
                 : 'text-slate-400 hover:bg-slate-700/70 hover:text-slate-200'
             }`}
           >
             <Move3d className="h-3 w-3" />
-            Gizmo
+            TCP Gizmo
           </button>
 
           {gizmoOn && (

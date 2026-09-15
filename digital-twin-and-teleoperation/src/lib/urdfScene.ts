@@ -62,6 +62,8 @@ export interface SceneHandles {
   linkDefinitions: URDFLinkDefinition[];
   /** Highlight the axis gizmo of the given joint, or hide all with null. */
   setActiveJointGizmo: (jointName: string | null) => void;
+  /** Show / hide every joint axis gizmo at once. */
+  setAllJointGizmosVisible: (visible: boolean) => void;
   /** Replace the displayed point cloud (world-coordinate XYZ array) or clear it. */
   setPointCloud: (points: Float32Array | null) => void;
   /** Show / hide the point cloud overlay. */
@@ -540,9 +542,27 @@ export function createURDFScene(
           jointGizmos.set(def.name, gizmo);
         }
 
+        let allJointGizmosVisible = false;
+
         const setActiveJointGizmo = (name: string | null) => {
+          if (allJointGizmosVisible) {
+            // In "show all" mode keep every gizmo visible and slightly enlarge
+            // the currently hovered / selected one for emphasis.
+            for (const [jointName, gizmo] of jointGizmos) {
+              gizmo.scale.setScalar(jointName === name ? 1.3 : 1);
+            }
+            return;
+          }
           for (const [jointName, gizmo] of jointGizmos) {
             gizmo.visible = jointName === name;
+          }
+        };
+
+        const setAllJointGizmosVisible = (visible: boolean) => {
+          allJointGizmosVisible = visible;
+          for (const gizmo of jointGizmos.values()) {
+            gizmo.visible = visible;
+            if (!visible) gizmo.scale.setScalar(1);
           }
         };
 
@@ -599,6 +619,7 @@ export function createURDFScene(
           jointDefinitions: options.joints ?? [],
           linkDefinitions: options.links ?? [],
           setActiveJointGizmo,
+          setAllJointGizmosVisible,
         });
       })
       .catch((err: unknown) => reject(err));
@@ -839,6 +860,7 @@ export function createFallbackScene(
     jointDefinitions: [],
     linkDefinitions: [],
     setActiveJointGizmo: () => {},
+    setAllJointGizmosVisible: () => {},
     setPointCloud: pointCloudOverlay.setPointCloud,
     setPointCloudVisible: pointCloudOverlay.setVisible,
     dispose: () => {
