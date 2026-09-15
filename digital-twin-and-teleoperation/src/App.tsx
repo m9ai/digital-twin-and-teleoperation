@@ -3,7 +3,6 @@ import { RobotViewer } from './components/RobotViewer';
 import { TelemetryPanel } from './components/TelemetryPanel';
 import { ControlDesk } from './components/ControlDesk';
 import { VideoWall } from './components/VideoWall';
-import { PointCloud } from './components/PointCloud';
 import { JointJogPanel } from './components/JointJogPanel';
 import { TrajectoryPanel } from './components/TrajectoryPanel';
 import { ConnectionBar } from './components/ConnectionBar';
@@ -42,8 +41,7 @@ function App() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-1 min-h-0">
           <div className="lg:col-span-2 flex flex-col gap-4 min-h-0">
             <RobotViewer />
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 min-h-0">
-              <PointCloud />
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 min-h-0">
               <JointJogPanel />
               <TrajectoryPanel />
             </div>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import {
   Box,
+  Cloud,
   Crosshair,
   Move3d,
   Rotate3d,
@@ -65,6 +66,8 @@ export interface RobotTwinProps {
   trajectoryPath?: THREE.Vector3[] | null;
   /** Playhead marker position along the trajectory. */
   playhead?: THREE.Vector3 | null;
+  /** World-coordinate point cloud (XYZ) to overlay on the twin, or null to clear. */
+  pointCloud?: Float32Array | null;
   /** IK target sampled while dragging the TCP gizmo. */
   onPoseChange?: (pose: Pose, phase: 'drag' | 'end') => void;
   /** Safety evaluation result, emitted at ~8 Hz. */
@@ -115,6 +118,7 @@ export function RobotTwin({
   links = [],
   trajectoryPath,
   playhead,
+  pointCloud,
   onPoseChange,
   onSafety,
   interpolationDelayMs = 80,
@@ -135,6 +139,7 @@ export function RobotTwin({
   const [preset, setPreset] = useState<CameraPresetId>('perspective');
   const [standardView, setStandardView] = useState<StandardViewAxis | null>(null);
   const [showStandardViews, setShowStandardViews] = useState(false);
+  const [pointCloudVisible, setPointCloudVisible] = useState(false);
   const [following, setFollowing] = useState(false);
   const [inputRateHz, setInputRateHz] = useState(0);
   const [hoverInfo, setHoverInfo] = useState<JointSelectionInfo | null>(null);
@@ -397,6 +402,11 @@ export function RobotTwin({
     handlesRef.current?.setPathPlayhead(playhead ?? null);
   }, [playhead, ready]);
 
+  useEffect(() => {
+    handlesRef.current?.setPointCloud(pointCloud ?? null);
+    handlesRef.current?.setPointCloudVisible(pointCloudVisible);
+  }, [pointCloud, pointCloudVisible, ready]);
+
   const applyPreset = (id: CameraPresetId) => {
     setPreset(id);
     setStandardView(null);
@@ -408,6 +418,12 @@ export function RobotTwin({
     setPreset('perspective');
     setShowStandardViews(false);
     handlesRef.current?.runtime?.applyStandardView(axis, true);
+  };
+
+  const togglePointCloud = () => {
+    const next = !pointCloudVisible;
+    setPointCloudVisible(next);
+    handlesRef.current?.setPointCloudVisible(next);
   };
 
   const toggleGizmo = () => {
@@ -486,6 +502,22 @@ export function RobotTwin({
               </div>
             )}
           </div>
+
+          <span className="mx-1 h-4 w-px bg-slate-700" />
+
+          <button
+            onClick={togglePointCloud}
+            disabled={!pointCloud}
+            title={pointCloud ? '显示 / 隐藏 LiDAR 点云' : '暂无点云数据'}
+            className={`flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium transition-colors disabled:opacity-40 ${
+              pointCloudVisible
+                ? 'bg-cyan-600/25 text-cyan-300 ring-1 ring-cyan-500/40'
+                : 'text-slate-400 hover:bg-slate-700/70 hover:text-slate-200'
+            }`}
+          >
+            <Cloud className="h-3 w-3" />
+            点云
+          </button>
 
           <span className="mx-1 h-4 w-px bg-slate-700" />
 

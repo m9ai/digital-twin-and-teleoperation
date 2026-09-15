@@ -65,6 +65,16 @@ export function RobotViewer() {
 
   const [trajectoryPath, setTrajectoryPath] = useState<THREE.Vector3[] | null>(null);
   const [playheadPoint, setPlayheadPoint] = useState<THREE.Vector3 | null>(null);
+  const [pointCloud, setPointCloud] = useState<Float32Array | null>(null);
+
+  /** Mock LiDAR point cloud in ROS Z-up coordinates; replace with ROS topic. */
+  useEffect(() => {
+    setPointCloud(generateMockPointCloud());
+    const id = window.setInterval(() => {
+      setPointCloud(generateMockPointCloud());
+    }, 2000);
+    return () => window.clearInterval(id);
+  }, []);
 
   /** Rebuild the end-effector polyline whenever the selection or model changes. */
   useEffect(() => {
@@ -174,6 +184,7 @@ export function RobotViewer() {
           links={links}
           trajectoryPath={trajectoryPath}
           playhead={playheadPoint}
+          pointCloud={pointCloud}
           onPoseChange={handlePoseChange}
           onSafety={handleSafety}
           environment={environment}
@@ -236,4 +247,27 @@ export function RobotViewer() {
       </div>
     </div>
   );
+}
+
+const MOCK_POINT_COUNT = 5000;
+
+function generateMockPointCloud(): Float32Array {
+  const points = new Float32Array(MOCK_POINT_COUNT * 3);
+  for (let i = 0; i < MOCK_POINT_COUNT; i++) {
+    if (Math.random() < 0.8) {
+      // Ground plane in ROS Z-up coordinates (Z ~= 0).
+      points[i * 3] = (Math.random() - 0.5) * 6;
+      points[i * 3 + 1] = (Math.random() - 0.5) * 6;
+      points[i * 3 + 2] = (Math.random() - 0.5) * 0.05;
+    } else {
+      // Clutter / obstacles above ground.
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      const r = 1.2 + Math.random() * 1.8;
+      points[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      points[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+      points[i * 3 + 2] = r * Math.cos(phi) + 0.5;
+    }
+  }
+  return points;
 }

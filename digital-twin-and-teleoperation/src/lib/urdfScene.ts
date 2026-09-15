@@ -62,6 +62,10 @@ export interface SceneHandles {
   linkDefinitions: URDFLinkDefinition[];
   /** Highlight the axis gizmo of the given joint, or hide all with null. */
   setActiveJointGizmo: (jointName: string | null) => void;
+  /** Replace the displayed point cloud (world-coordinate XYZ array) or clear it. */
+  setPointCloud: (points: Float32Array | null) => void;
+  /** Show / hide the point cloud overlay. */
+  setPointCloudVisible: (visible: boolean) => void;
 }
 
 /** The last link of the kinematic chain: a link that is no joint's parent. */
@@ -192,6 +196,79 @@ export function createTrajectoryPathOverlay(scene: THREE.Scene) {
   };
 
   return { setTrajectoryPath, setPathPlayhead, dispose };
+}
+
+export function createPointCloudOverlay(scene: THREE.Scene) {
+  const group = new THREE.Group();
+  group.name = 'point-cloud';
+  group.visible = false;
+  scene.add(group);
+
+  let points: THREE.Points | null = null;
+
+  const setPointCloud = (positions: Float32Array | null) => {
+    if (points) {
+      group.remove(points);
+      points.geometry.dispose();
+      (points.material as THREE.Material).dispose();
+      points = null;
+    }
+
+    if (!positions || positions.length < 3) return;
+
+    const count = Math.floor(positions.length / 3);
+    const geometry = new THREE.BufferGeometry();
+
+    // Expect incoming points in ROS/URDF Z-up coordinates and convert to
+    // Three.js Y-up: (x, y, z) -> (x, z, -y).
+    const threePositions = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      threePositions[i * 3] = positions[i * 3];
+      threePositions[i * 3 + 1] = positions[i * 3 + 2];
+      threePositions[i * 3 + 2] = -positions[i * 3 + 1];
+    }
+    geometry.setAttribute('position', new THREE.BufferAttribute(threePositions, 3));
+
+    // Color by height (ROS Z) for immediate depth perception.
+    const colors = new Float32Array(count * 3);
+    const colorLow = new THREE.Color(0x22d3ee);
+    const colorHigh = new THREE.Color(0xf472b6);
+    const minZ = -2;
+    const maxZ = 2;
+    const range = Math.max(maxZ - minZ, 0.001);
+
+    for (let i = 0; i < count; i++) {
+      const z = positions[i * 3 + 2];
+      const t = Math.min(1, Math.max(0, (z - minZ) / range));
+      const c = colorLow.clone().lerp(colorHigh, t);
+      colors[i * 3] = c.r;
+      colors[i * 3 + 1] = c.g;
+      colors[i * 3 + 2] = c.b;
+    }
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const material = new THREE.PointsMaterial({
+      size: 0.025,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.85,
+      sizeAttenuation: true,
+    });
+
+    points = new THREE.Points(geometry, material);
+    group.add(points);
+  };
+
+  const setVisible = (visible: boolean) => {
+    group.visible = visible;
+  };
+
+  const dispose = () => {
+    setPointCloud(null);
+    scene.remove(group);
+  };
+
+  return { setPointCloud, setVisible, dispose };
 }
 
 interface SceneShell {
@@ -436,6 +513,7 @@ export function createURDFScene(
         };
 
         const overlay = createTrajectoryPathOverlay(scene);
+        const pointCloudOverlay = createPointCloudOverlay(scene);
 
         runtime = createSceneRuntime({
           scene,
@@ -488,6 +566,7 @@ export function createURDFScene(
           jointInteraction?.dispose();
           runtime?.dispose();
           overlay.dispose();
+          pointCloudOverlay.dispose();
           environment.dispose();
           controls.dispose();
           renderer.dispose();
@@ -512,6 +591,8 @@ export function createURDFScene(
           computeEndEffectorPath,
           setTrajectoryPath: overlay.setTrajectoryPath,
           setPathPlayhead: overlay.setPathPlayhead,
+          setPointCloud: pointCloudOverlay.setPointCloud,
+          setPointCloudVisible: pointCloudOverlay.setVisible,
           runtime,
           environment,
           jointInteraction,
@@ -700,6 +781,7 @@ export function createFallbackScene(
   };
 
   const overlay = createTrajectoryPathOverlay(scene);
+  const pointCloudOverlay = createPointCloudOverlay(scene);
 
   /** Which link each joint drives, so safety highlighting can find a mesh. */
   const jointLinkMap: Record<string, string> = {
@@ -757,9 +839,12 @@ export function createFallbackScene(
     jointDefinitions: [],
     linkDefinitions: [],
     setActiveJointGizmo: () => {},
+    setPointCloud: pointCloudOverlay.setPointCloud,
+    setPointCloudVisible: pointCloudOverlay.setVisible,
     dispose: () => {
       runtime.dispose();
       overlay.dispose();
+      pointCloudOverlay.dispose();
       environment.dispose();
       controls.dispose();
       renderer.dispose();
