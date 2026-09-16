@@ -48,7 +48,7 @@ export default defineConfig({
       // new builds are announced through PWABadge and applied on confirmation.
       registerType: 'prompt',
       injectRegister: null,
-      includeAssets: ['favicon.svg', 'icons/*.svg', 'robots.txt', 'sitemap.xml'],
+      includeAssets: ['favicon.svg', 'icons/*.svg', 'robots.txt', 'sitemap.xml', 'assets/*.*'],
       manifest: {
         name: 'ROS 2 Digital Twin & Teleoperation',
         short_name: 'ROS 2 Twin',
