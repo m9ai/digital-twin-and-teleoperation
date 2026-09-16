@@ -3,4 +3,5 @@
         {"name": "机械臂", "desc": "五轴六自由度机械臂示例", "source": "https://ebot.m9ai.work/assets/industrial-5axis-arm.urdf"},
         {"name": "四足机器狗", "desc": "五轴六自由度机械臂示例", "source": "https://ebot.m9ai.work/assets/quadruped-robot-dog.urdf"},
         {"name": "人形机器人", "desc": "简易四足机器狗 URDF 模型", "source": "https://ebot.m9ai.work/assets/mock-robot.urdf"}
+    ]
 }
