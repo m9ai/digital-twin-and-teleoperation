@@ -3,7 +3,7 @@ dist
 public/draco
 dist-ssr
 *.local
-.DS_Store
+*/.DS_Store
 # .env is committed on purpose: it only holds the public site origin.
 # Use .env.local for anything private.
 .env.local
