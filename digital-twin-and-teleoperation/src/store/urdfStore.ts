@@ -32,6 +32,36 @@ export interface ModelSource {
   entryPath: string | null;
 }
 
+/**
+ * One rendered robot in the digital twin.
+ *
+ * The twin can display a swarm of robots. Each instance keeps its own copy
+ * of the resolved URDF text and transform so copies of the same model can be
+ * placed independently without re-parsing the source files.
+ */
+export interface RobotInstance {
+  id: string;
+  sourceId: string;
+  entryPath: string;
+  /** Display label, e.g. `humanoid #2`. */
+  name: string;
+  /** World placement in the Three.js scene. */
+  transform: {
+    x: number;
+    y: number;
+    z: number;
+    rotationY: number;
+    scale: number;
+  };
+  visible: boolean;
+  /** The instance currently receiving joints / gizmo / safety interaction. */
+  isActive: boolean;
+  /** Expanded URDF text used to build this instance. */
+  urdfText: string;
+  joints: URDFJointDefinition[];
+  links: URDFLinkDefinition[];
+}
+
 export interface URDFState {
   fileName: string | null;
   urdfText: string | null;
@@ -43,6 +73,10 @@ export interface URDFState {
   sources: ModelSource[];
   /** Source whose entry URDF is rendered in the twin. */
   activeSourceId: string | null;
+  /** All robot instances currently shown in the twin. */
+  instances: RobotInstance[];
+  /** Instance that receives joints / gizmo / safety interaction. */
+  activeInstanceId: string | null;
   /** Mesh pool of every source, active source first. Drives the resolver. */
   meshFiles: File[];
   resolvedMeshes: MeshReference[];
@@ -75,6 +109,19 @@ export interface URDFState {
   ) => void;
   /** Render a different description of an already imported source. */
   setActiveModelFile: (sourceId: string, path: string) => Promise<void>;
+  /** Add a new robot instance to the twin, optionally copying an existing one. */
+  addRobotInstance: (sourceId: string, path: string) => Promise<void>;
+  /** Remove one robot instance from the twin. */
+  removeRobotInstance: (instanceId: string) => void;
+  /** Switch which instance receives joints / gizmo / safety interaction. */
+  setActiveInstance: (instanceId: string | null) => void;
+  /** Move, rotate or scale a robot instance. */
+  setInstanceTransform: (
+    instanceId: string,
+    patch: Partial<RobotInstance['transform']>
+  ) => void;
+  /** Show or hide a robot instance without removing it. */
+  setInstanceVisible: (instanceId: string, visible: boolean) => void;
   removeModelSource: (sourceId: string) => Promise<void>;
   /** `identifier` is the source-relative path, or the bare file name. */
   removeModelFile: (sourceId: string, identifier: string) => Promise<void>;
@@ -93,6 +140,37 @@ const basenameOf = (path: string) => path.split('/').pop() ?? path;
 
 let sourceSeq = 0;
 const createSourceId = () => `model-source-${(sourceSeq += 1)}`;
+
+let instanceSeq = 0;
+const createInstanceId = () => `robot-instance-${(instanceSeq += 1)}`;
+
+/**
+ * Produce a display name like `humanoid #2` for copies of the same model.
+ */
+function deriveInstanceName(
+  sourceId: string,
+  sourceName: string,
+  entryName: string,
+  instances: RobotInstance[]
+): string {
+  const base = `${sourceName}/${entryName}`;
+  const count = instances.filter((item) => item.sourceId === sourceId && item.entryPath === entryName).length;
+  return count > 0 ? `${base} #${count + 1}` : base;
+}
+
+/**
+ * Compute a non-overlapping world placement for a new robot instance.
+ *
+ * Copies of the same model are spaced along the world X axis so they do not
+ * render on top of each other.
+ */
+function deriveInstanceTransform(instances: RobotInstance[]): RobotInstance['transform'] {
+  const spacing = 1.2;
+  const occupied = new Set(instances.map((item) => Math.round(item.transform.x / spacing)));
+  let slot = 0;
+  while (occupied.has(slot)) slot += 1;
+  return { x: slot * spacing, y: 0, z: 0, rotationY: 0, scale: 1 };
+}
 
 /**
  * Mesh pool handed to the resolver, active source first.
@@ -200,6 +278,8 @@ export const useURDFStore = create<URDFState>((set, get) => ({
   isLoading: false,
   sources: [],
   activeSourceId: null,
+  instances: [],
+  activeInstanceId: null,
   meshFiles: [],
   resolvedMeshes: [],
   missingMeshes: [],
@@ -226,16 +306,28 @@ export const useURDFStore = create<URDFState>((set, get) => ({
       const next = { ...prev, sources, activeSourceId: source.id, meshFiles };
 
       if (options.entryText !== undefined) {
-        return {
-          ...next,
-          ...applyURDF(
-            next,
-            basenameOf(options.entryPath ?? name),
-            options.entryText,
-            meshFiles,
-            options.xacroSources ?? {}
-          ),
+        const applied = applyURDF(
+          next,
+          basenameOf(options.entryPath ?? name),
+          options.entryText,
+          meshFiles,
+          options.xacroSources ?? {}
+        );
+        const entryPath = options.entryPath ?? basenameOf(name);
+        const instance: RobotInstance = {
+          id: createInstanceId(),
+          sourceId: source.id,
+          entryPath,
+          name: deriveInstanceName(source.id, source.name, basenameOf(entryPath), prev.instances),
+          transform: deriveInstanceTransform(prev.instances),
+          visible: true,
+          isActive: true,
+          urdfText: applied.processedText ?? applied.urdfText ?? options.entryText,
+          joints: applied.joints ?? [],
+          links: applied.links ?? [],
         };
+        const instances = prev.instances.map((item) => ({ ...item, isActive: false })).concat(instance);
+        return { ...next, ...applied, instances, activeInstanceId: instance.id };
       }
       // Meshes only: keep whatever robot is already on screen and let it pick
       // up the new files.
@@ -289,7 +381,6 @@ export const useURDFStore = create<URDFState>((set, get) => ({
     if (!source) return;
     const entry = source.files.find((file) => getModelPath(file) === path);
     if (!entry) return;
-    if (source.id === get().activeSourceId && source.entryPath === path) return;
 
     set({ isLoading: true, error: null });
     try {
@@ -305,41 +396,165 @@ export const useURDFStore = create<URDFState>((set, get) => ({
           item.id === sourceId ? { ...item, entryPath: path } : item
         );
         const meshFiles = collectMeshFiles(sources, sourceId);
-        const next = { ...state, sources, activeSourceId: sourceId, meshFiles };
-        return { ...next, ...applyURDF(next, basenameOf(path), entryText, meshFiles, xacroSources) };
+        const applied = applyURDF(state, basenameOf(path), entryText, meshFiles, xacroSources);
+        const activeInstance = state.instances.find((item) => item.id === state.activeInstanceId);
+
+        let instances: RobotInstance[];
+        let activeInstanceId = state.activeInstanceId;
+        if (activeInstance) {
+          instances = state.instances.map((item) =>
+            item.id === activeInstance.id
+              ? {
+                  ...item,
+                  sourceId,
+                  entryPath: path,
+                  name: deriveInstanceName(source.id, source.name, basenameOf(path), state.instances.filter((i) => i.id !== item.id)),
+                  urdfText: applied.processedText ?? applied.urdfText ?? entryText,
+                  joints: applied.joints ?? [],
+                  links: applied.links ?? [],
+                  isActive: true,
+                }
+              : { ...item, isActive: false }
+          );
+        } else {
+          const instance: RobotInstance = {
+            id: createInstanceId(),
+            sourceId,
+            entryPath: path,
+            name: deriveInstanceName(source.id, source.name, basenameOf(path), state.instances),
+            transform: deriveInstanceTransform(state.instances),
+            visible: true,
+            isActive: true,
+            urdfText: applied.processedText ?? applied.urdfText ?? entryText,
+            joints: applied.joints ?? [],
+            links: applied.links ?? [],
+          };
+          instances = state.instances.map((item) => ({ ...item, isActive: false })).concat(instance);
+          activeInstanceId = instance.id;
+        }
+
+        return {
+          ...state,
+          sources,
+          activeSourceId: sourceId,
+          meshFiles,
+          instances,
+          activeInstanceId,
+          ...applied,
+        };
       });
     } catch (err) {
       set({ error: err instanceof Error ? err.message : '切换模型失败', isLoading: false });
     }
   },
 
+  addRobotInstance: async (sourceId, path) => {
+    const source = get().sources.find((item) => item.id === sourceId);
+    if (!source) return;
+    const entry = source.files.find((file) => getModelPath(file) === path);
+    if (!entry) return;
+
+    set({ isLoading: true, error: null });
+    try {
+      const entryText = await entry.text();
+      if (!/<robot[\s>]/.test(entryText)) {
+        throw new Error(`${basenameOf(path)} 内容不是有效的 URDF/XML`);
+      }
+      const xacroSources = await readXacroSources(
+        source.files.filter((file) => file !== entry && isXacroFile(file.name))
+      );
+      set((state) => {
+        const meshFiles = collectMeshFiles(state.sources, sourceId);
+        const applied = applyURDF(state, basenameOf(path), entryText, meshFiles, xacroSources);
+        const instance: RobotInstance = {
+          id: createInstanceId(),
+          sourceId,
+          entryPath: path,
+          name: deriveInstanceName(source.id, source.name, basenameOf(path), state.instances),
+          transform: deriveInstanceTransform(state.instances),
+          visible: true,
+          isActive: true,
+          urdfText: applied.processedText ?? applied.urdfText ?? entryText,
+          joints: applied.joints ?? [],
+          links: applied.links ?? [],
+        };
+        const instances = state.instances.map((item) => ({ ...item, isActive: false })).concat(instance);
+        return {
+          ...state,
+          activeSourceId: sourceId,
+          meshFiles,
+          instances,
+          activeInstanceId: instance.id,
+          ...applied,
+        };
+      });
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : '追加模型失败', isLoading: false });
+    }
+  },
+
+  removeRobotInstance: (instanceId) => {
+    set((state) => {
+      const instances = state.instances.filter((item) => item.id !== instanceId);
+      const activeRemoved = state.activeInstanceId === instanceId;
+      const activeInstanceId = activeRemoved
+        ? (instances[instances.length - 1]?.id ?? null)
+        : state.activeInstanceId;
+      const instancesWithActive = instances.map((item, index) => ({
+        ...item,
+        isActive: activeRemoved ? index === instances.length - 1 : item.isActive,
+      }));
+      return { instances: instancesWithActive, activeInstanceId };
+    });
+  },
+
+  setActiveInstance: (instanceId) => {
+    set((state) => ({
+      instances: state.instances.map((item) => ({ ...item, isActive: item.id === instanceId })),
+      activeInstanceId: instanceId,
+    }));
+  },
+
+  setInstanceTransform: (instanceId, patch) => {
+    set((state) => ({
+      instances: state.instances.map((item) =>
+        item.id === instanceId ? { ...item, transform: { ...item.transform, ...patch } } : item
+      ),
+    }));
+  },
+
+  setInstanceVisible: (instanceId, visible) => {
+    set((state) => ({
+      instances: state.instances.map((item) =>
+        item.id === instanceId ? { ...item, visible } : item
+      ),
+    }));
+  },
+
   removeModelSource: async (sourceId) => {
     const prev = get();
     const sources = prev.sources.filter((source) => source.id !== sourceId);
-    if (sources.length === 0) {
+    const instances = prev.instances.filter((item) => item.sourceId !== sourceId);
+
+    if (sources.length === 0 || instances.length === 0) {
       prev.reset();
       return;
     }
 
-    const active = sources.find((source) => source.id === prev.activeSourceId) ?? sources[0];
-    const meshFiles = collectMeshFiles(sources, active.id);
-    set({ sources, activeSourceId: active.id, meshFiles });
+    const activeInstanceId = instances.some((item) => item.id === prev.activeInstanceId)
+      ? prev.activeInstanceId
+      : instances[instances.length - 1].id;
+    const activeInstance = instances.find((item) => item.id === activeInstanceId)!;
+    const activeSource = sources.find((source) => source.id === activeInstance.sourceId) ?? sources[0];
+    const meshFiles = collectMeshFiles(sources, activeSource.id);
 
-    const activeChanged = active.id !== prev.activeSourceId;
-    if (!activeChanged && active.entryPath) {
-      set((state) => ({
-        ...applyURDF(
-          { ...state, meshFiles },
-          state.fileName ?? 'robot.urdf',
-          state.urdfText ?? '',
-          meshFiles
-        ),
-      }));
-      return;
-    }
-
-    const fallback = pickEntryFile(active.files);
-    if (fallback) await get().setActiveModelFile(active.id, getModelPath(fallback));
+    set({
+      sources,
+      activeSourceId: activeSource.id,
+      instances: instances.map((item) => ({ ...item, isActive: item.id === activeInstanceId })),
+      activeInstanceId,
+      meshFiles,
+    });
   },
 
   removeModelFile: async (sourceId, identifier) => {
@@ -357,32 +572,31 @@ export const useURDFStore = create<URDFState>((set, get) => ({
       })
       .filter((source) => source.files.length > 0);
 
-    if (sources.length === 0) {
+    const instances = prev.instances.filter(
+      (item) =>
+        !(item.sourceId === sourceId && (item.entryPath === identifier || basenameOf(item.entryPath) === identifier))
+    );
+
+    if (sources.length === 0 || instances.length === 0) {
       prev.reset();
       return;
     }
 
-    const active = sources.find((source) => source.id === prev.activeSourceId) ?? sources[0];
-    const meshFiles = collectMeshFiles(sources, active.id);
-    set({ sources, activeSourceId: active.id, meshFiles, isLoading: false });
+    const activeInstanceId = instances.some((item) => item.id === prev.activeInstanceId)
+      ? prev.activeInstanceId
+      : instances[instances.length - 1].id;
+    const activeInstance = instances.find((item) => item.id === activeInstanceId)!;
+    const activeSource = sources.find((source) => source.id === activeInstance.sourceId) ?? sources[0];
+    const meshFiles = collectMeshFiles(sources, activeSource.id);
 
-    if (active.entryPath) {
-      set((state) => ({
-        ...applyURDF(
-          { ...state, meshFiles },
-          state.fileName ?? 'robot.urdf',
-          state.urdfText ?? '',
-          meshFiles
-        ),
-      }));
-      return;
-    }
-
-    // The rendered description itself was removed: fall back to another one in
-    // the same folder before giving up on the folder.
-    const fallback = pickEntryFile(active.files) ?? pickEntryFile(sources.flatMap((s) => s.files));
-    const owner = fallback && sources.find((source) => source.files.includes(fallback));
-    if (owner && fallback) await get().setActiveModelFile(owner.id, getModelPath(fallback));
+    set({
+      sources,
+      activeSourceId: activeSource.id,
+      instances: instances.map((item) => ({ ...item, isActive: item.id === activeInstanceId })),
+      activeInstanceId,
+      meshFiles,
+      isLoading: false,
+    });
   },
 
   setError: (error) => set({ error }),
@@ -413,6 +627,8 @@ export const useURDFStore = create<URDFState>((set, get) => ({
       isLoading: false,
       sources: [],
       activeSourceId: null,
+      instances: [],
+      activeInstanceId: null,
       meshFiles: [],
       resolvedMeshes: [],
       missingMeshes: [],

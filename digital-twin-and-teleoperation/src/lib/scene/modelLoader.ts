@@ -125,12 +125,40 @@ export function loadRobotMesh(
   }
 
   if (format === 'dae') {
-    new ColladaLoader(manager).load(
-      path,
-      (dae) => finish(dae.scene),
-      undefined,
-      (err) => finish(null, err)
-    );
+    // ColladaLoader's error message is cryptic when the fetched file is not
+    // XML (e.g. a 404 page or a misnamed binary file). Pre-check the response
+    // so the console explains the real cause.
+    fetch(path)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status} ${response.statusText}`);
+        }
+        const contentType = response.headers.get('content-type') ?? '';
+        if (!contentType.includes('xml') && !contentType.includes('application/octet-stream')) {
+          console.warn(
+            `[modelLoader] ${path} has suspicious content-type "${contentType}"; DAE should be XML.`
+          );
+        }
+        return response.text();
+      })
+      .then((text) => {
+        const trimmed = text.trim();
+        if (!trimmed.startsWith('<?xml') && !trimmed.startsWith('<COLLADA')) {
+          throw new Error(
+            `File does not look like a Collada XML document (starts with "${trimmed.slice(0, 40).replace(/\n/g, ' ')}...")`
+          );
+        }
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(text, 'application/xml');
+        const parseError = doc.querySelector('parsererror');
+        if (parseError) {
+          throw new Error(`XML parse error: ${parseError.textContent?.slice(0, 120)}`);
+        }
+        new ColladaLoader(manager).load(path, (dae) => finish(dae.scene), undefined, (err) =>
+          finish(null, err)
+        );
+      })
+      .catch((err) => finish(null, err));
     return;
   }
 

@@ -20,7 +20,7 @@ export function RobotViewer() {
   const [pathStats, setPathStats] = useState<{ points: number; length: number } | null>(null);
   const [safety, setSafety] = useState<SafetyReport | null>(null);
 
-  const { blobUrl, joints, links } = useURDFStore();
+  const { instances } = useURDFStore();
   const eStop = useRobotStore((s) => s.eStop);
   const addLog = useRobotStore((s) => s.addLog);
   const useSimulation = useConnectionStore((s) => s.useSimulation);
@@ -179,9 +179,7 @@ export function RobotViewer() {
 
       <div className="relative flex-1 overflow-hidden rounded-lg border border-slate-800 bg-slate-950">
         <RobotTwin
-          urdfUrl={blobUrl}
-          joints={joints}
-          links={links}
+          instances={instances}
           trajectoryPath={trajectoryPath}
           playhead={playheadPoint}
           pointCloud={pointCloud}

@@ -28,6 +28,22 @@ import type { LinkNode } from '@/lib/safetyMonitor';
 import type { URDFJointDefinition, URDFLinkDefinition } from '@/lib/urdfJoints';
 import type { CameraPresetId, GizmoMode, JointState, Pose } from '@/types';
 
+export interface RobotInstanceRender {
+  id: string;
+  urdfText: string;
+  transform: {
+    x: number;
+    y: number;
+    z: number;
+    rotationY: number;
+    scale: number;
+  };
+  visible: boolean;
+  isActive: boolean;
+  joints: URDFJointDefinition[];
+  links: URDFLinkDefinition[];
+}
+
 export interface SceneHandles {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
@@ -321,24 +337,29 @@ function createSceneShell(
 
 export function createURDFScene(
   container: HTMLElement,
-  urdfUrl: string,
+  instances: RobotInstanceRender[],
   options: {
     onPoseChange?: (pose: Pose, phase: 'drag' | 'end') => void;
     environment?: EnvironmentRigCallbacks;
-    joints?: URDFJointDefinition[];
-    links?: URDFLinkDefinition[];
     onJointHover?: (info: JointSelectionInfo | null) => void;
     onJointSelect?: (info: JointSelectionInfo | null) => void;
     onJointChange?: (jointName: string, value: number) => void;
     onJointDragEnd?: (jointName: string, value: number) => void;
   } = {}
 ): Promise<SceneHandles> {
+  if (instances.length === 0) {
+    return Promise.resolve(createFallbackScene(container, options));
+  }
+
   const { scene, camera, renderer, controls, environment } = createSceneShell(
     container,
     options.environment ?? {}
   );
 
-  let robot: THREE.Object3D | null = null;
+  const rootGroup = new THREE.Group();
+  rootGroup.name = 'robot_swarm';
+  scene.add(rootGroup);
+
   let runtime: SceneRuntime | null = null;
 
   const loader = new URDFLoader() as unknown as {
@@ -352,7 +373,7 @@ export function createURDFScene(
   // Mesh loading happens asynchronously after `loader.parse()` returns. We
   // track outstanding loads so the initial camera framing is computed once all
   // geometry is actually present, otherwise the bounding box is too small and
-  // the robot appears oversized / clipped.
+  // the robots appear oversized / clipped.
   let pendingMeshes = 0;
   let hasFramed = false;
   let settleRaf: number | null = null;
@@ -362,22 +383,31 @@ export function createURDFScene(
   const MAX_SETTLE_FRAMES = 18;
   const GROUND_EPSILON = 0.02;
 
-  const settleRobotOnGround = () => {
-    if (!robot) return;
-    // Ensure every asynchronously loaded mesh has contributed to the world
-    // matrices before measuring the lowest point.
-    robot.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(robot);
-    if (box.isEmpty()) return;
-    // In Three.js y = 0 is the ground plane. Many URDFs (especially humanoids)
-    // define base_link above the feet, so after the Z-up -> Y-up rotation the
-    // lowest point ends up below y = 0. Shift the root so the model rests on
-    // the ground without changing its horizontal placement.
-    // A visible epsilon keeps the soles clearly above generated floor planes
-    // and avoids z-fighting with the ground grid (which sits at y ≈ 0.003).
-    if (box.min.y < GROUND_EPSILON) {
-      robot.position.y += GROUND_EPSILON - box.min.y;
+  const robots = new Map<string, THREE.Object3D>();
+  let activeRobot: THREE.Object3D | null = null;
+  let activeInstance: RobotInstanceRender | null = null;
+  let activeJoints: Record<
+    string,
+    THREE.Object3D & {
+      axis: THREE.Vector3;
+      jointType: string;
+      setJointValue: (...values: number[]) => void;
+      angle?: number;
+    }
+  > | null = null;
+
+  const settleRobotsOnGround = () => {
+    for (const robot of robots.values()) {
       robot.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(robot);
+      if (box.isEmpty()) continue;
+      // In Three.js y = 0 is the ground plane. Many URDFs define base_link above
+      // the feet, so after the Z-up -> Y-up rotation the lowest point ends up
+      // below y = 0. Shift each instance individually so it rests on the ground.
+      if (box.min.y < GROUND_EPSILON) {
+        robot.position.y += GROUND_EPSILON - box.min.y;
+        robot.updateMatrixWorld(true);
+      }
     }
   };
 
@@ -392,13 +422,13 @@ export function createURDFScene(
   /**
    * Keep re-measuring the model bounds for several frames. URDFLoader sometimes
    * attaches geometry a frame or two after the loader callback fires, so a
-   * single measurement can miss late meshes and leave the robot penetrating
-   * the ground.
+   * single measurement can miss late meshes and leave robots penetrating the
+   * ground.
    */
   const scheduleSettle = () => {
     stopScheduledSettle();
     const step = () => {
-      settleRobotOnGround();
+      settleRobotsOnGround();
       settleFrame += 1;
       if (settleFrame < MAX_SETTLE_FRAMES) {
         settleRaf = requestAnimationFrame(step);
@@ -409,12 +439,24 @@ export function createURDFScene(
     step();
   };
 
+  const computeSwarmBounds = () => {
+    const box = new THREE.Box3();
+    for (const robot of robots.values()) {
+      box.expandByObject(robot);
+    }
+    return box;
+  };
+
   const applyInitialFraming = () => {
-    // Always keep settling; camera framing is only done once.
     scheduleSettle();
     if (!hasFramed && runtime) {
       hasFramed = true;
       runtime.applyCameraPreset('perspective', false);
+      const box = computeSwarmBounds();
+      if (!box.isEmpty()) {
+        const center = box.getCenter(new THREE.Vector3());
+        controls.target.copy(center);
+      }
     }
   };
 
@@ -434,21 +476,24 @@ export function createURDFScene(
   };
 
   return new Promise((resolve, reject) => {
-    fetch(urdfUrl)
-      .then((res) => {
-        if (!res.ok) throw new Error(`Failed to load URDF: ${res.status} ${res.statusText}`);
-        return res.text();
-      })
-      .then((urdfText) => {
+    try {
+      for (const instance of instances) {
         // Pass an empty working path so mesh filenames that are already
         // absolute blob URLs are not prepended with the URDF base URL.
-        const parsed = (loader as unknown as { parse: (text: string, path: string) => THREE.Object3D }).parse(urdfText, '');
-        robot = parsed;
-        robot.scale.set(1, 1, 1);
+        const parsed = (loader as unknown as { parse: (text: string, path: string) => THREE.Object3D }).parse(
+          instance.urdfText,
+          ''
+        );
+        const robot = parsed;
+        robot.name = `robot_${instance.id}`;
+        robot.scale.setScalar(instance.transform.scale);
 
         // ROS URDF uses Z-up; Three.js uses Y-up. Rotate the root so the
         // robot stands upright in the Three.js scene.
         robot.rotation.x = -Math.PI / 2;
+        robot.rotation.y = instance.transform.rotationY;
+        robot.position.set(instance.transform.x, instance.transform.y, instance.transform.z);
+        robot.visible = instance.visible;
 
         const linkMaterialCache = new Map<string, THREE.MeshStandardMaterial>();
 
@@ -470,7 +515,7 @@ export function createURDFScene(
             } else {
               // No URDF <material> tag: assign a per-link PBR color so STL
               // meshes and anonymous primitives don't all render grey.
-              const linkName = findLinkName(mesh, robot!) || 'default';
+              const linkName = findLinkName(mesh, robot) || 'default';
               if (!linkMaterialCache.has(linkName)) {
                 material = createDefaultPBRMaterial();
                 material.color.setHex(colorForLinkName(linkName));
@@ -483,193 +528,208 @@ export function createURDFScene(
             mesh.material = material;
           }
         });
-        scene.add(robot);
+
+        rootGroup.add(robot);
 
         // Force initial matrix computation now that transforms are set.
         robot.updateMatrix();
         robot.updateMatrixWorld(true);
 
-        const urdfJoints = (robot as unknown as {
-          joints: Record<
-            string,
-            THREE.Object3D & {
-              axis: THREE.Vector3;
-              jointType: string;
-              setJointValue: (...values: number[]) => void;
-              angle?: number;
-            }
-          >;
-        }).joints;
+        robots.set(instance.id, robot);
 
-        const applyJointPositions = (names: string[], values: number[]) => {
-          if (!robot) return;
-          let changed = false;
-          names.forEach((name, index) => {
-            const joint = urdfJoints?.[name];
-            if (joint && typeof joint.setJointValue === 'function') {
-              joint.setJointValue(values[index] ?? 0);
-              changed = true;
-            }
-          });
-          if (changed) robot.updateMatrixWorld(true);
-        };
+        if (instance.isActive) {
+          activeRobot = robot;
+          activeInstance = instance;
+          activeJoints = (robot as unknown as { joints: typeof activeJoints }).joints ?? null;
+        }
+      }
 
-        const applyJointState = (state: JointState) => {
-          applyJointPositions(
-            state.name,
-            state.name.map((_, index) => state.position[index] ?? 0)
-          );
-        };
+      if (!activeRobot || !activeInstance) {
+        const first = robots.entries().next().value as [string, THREE.Object3D] | undefined;
+        if (first) {
+          activeRobot = first[1];
+          activeInstance = instances.find((item) => item.id === first[0]) ?? null;
+          activeJoints = (activeRobot as unknown as { joints: typeof activeJoints }).joints ?? null;
+        }
+      }
 
-        const endEffector = findEndEffectorLink(robot);
-        // tool0 convention: the TCP sits at the end-effector link origin.
-        const tcp = new THREE.Object3D();
-        tcp.name = 'tcp_frame';
-        (endEffector ?? robot).add(tcp);
+      if (!activeRobot || !activeInstance) {
+        reject(new Error('No robot instance could be loaded'));
+        return;
+      }
 
-        const computeEndEffectorPath = (samples: number[][], jointNames: string[]): THREE.Vector3[] => {
-          if (!robot || !endEffector || !urdfJoints) return [];
+      const urdfJoints = activeJoints;
 
-          const saved = jointNames.map((name) => urdfJoints[name]?.angle ?? 0);
-          const points: THREE.Vector3[] = [];
-
-          for (const sample of samples) {
-            jointNames.forEach((name, i) => urdfJoints[name]?.setJointValue(sample[i] ?? 0));
-            robot.updateMatrixWorld(true);
-            points.push(tcp.getWorldPosition(new THREE.Vector3()));
+      const applyJointPositions = (names: string[], values: number[]) => {
+        if (!activeRobot || !urdfJoints) return;
+        let changed = false;
+        names.forEach((name, index) => {
+          const joint = urdfJoints[name];
+          if (joint && typeof joint.setJointValue === 'function') {
+            joint.setJointValue(values[index] ?? 0);
+            changed = true;
           }
-
-          // Restore the live pose; the whole sweep is synchronous so it never
-          // reaches the renderer in an intermediate state.
-          jointNames.forEach((name, i) => urdfJoints[name]?.setJointValue(saved[i]));
-          robot.updateMatrixWorld(true);
-
-          return points;
-        };
-
-        const overlay = createTrajectoryPathOverlay(scene);
-        const pointCloudOverlay = createPointCloudOverlay(scene);
-
-        runtime = createSceneRuntime({
-          scene,
-          camera,
-          renderer,
-          controls,
-          container,
-          root: robot,
-          tcp,
-          onPoseChange: options.onPoseChange,
         });
-        runtime.start();
-        // Defer the initial framing until every asynchronous mesh has been
-        // loaded, otherwise the bounding box is too small and the camera ends
-        // up zoomed in too far. For mesh-less URDFs this fires immediately.
-        // A hard timeout prevents a hung mesh from leaving the model forever
-        // underground.
-        if (pendingMeshes === 0) {
+        if (changed) activeRobot.updateMatrixWorld(true);
+      };
+
+      const applyJointState = (state: JointState) => {
+        applyJointPositions(
+          state.name,
+          state.name.map((_, index) => state.position[index] ?? 0)
+        );
+      };
+
+      const endEffector = findEndEffectorLink(activeRobot);
+      // tool0 convention: the TCP sits at the end-effector link origin.
+      const tcp = new THREE.Object3D();
+      tcp.name = 'tcp_frame';
+      (endEffector ?? activeRobot).add(tcp);
+
+      const computeEndEffectorPath = (samples: number[][], jointNames: string[]): THREE.Vector3[] => {
+        if (!activeRobot || !endEffector || !urdfJoints) return [];
+
+        const saved = jointNames.map((name) => urdfJoints[name]?.angle ?? 0);
+        const points: THREE.Vector3[] = [];
+
+        for (const sample of samples) {
+          jointNames.forEach((name, i) => urdfJoints[name]?.setJointValue(sample[i] ?? 0));
+          activeRobot.updateMatrixWorld(true);
+          points.push(tcp.getWorldPosition(new THREE.Vector3()));
+        }
+
+        // Restore the live pose; the whole sweep is synchronous so it never
+        // reaches the renderer in an intermediate state.
+        jointNames.forEach((name, i) => urdfJoints[name]?.setJointValue(saved[i]));
+        activeRobot.updateMatrixWorld(true);
+
+        return points;
+      };
+
+      const overlay = createTrajectoryPathOverlay(scene);
+      const pointCloudOverlay = createPointCloudOverlay(scene);
+
+      runtime = createSceneRuntime({
+        scene,
+        camera,
+        renderer,
+        controls,
+        container,
+        root: activeRobot,
+        tcp,
+        onPoseChange: options.onPoseChange,
+      });
+      runtime.start();
+      // Defer the initial framing until every asynchronous mesh has been
+      // loaded, otherwise the bounding box is too small and the camera ends
+      // up zoomed in too far. For mesh-less URDFs this fires immediately.
+      // A hard timeout prevents a hung mesh from leaving the model forever
+      // underground.
+      if (pendingMeshes === 0) {
+        applyInitialFraming();
+      } else {
+        framingTimeout = window.setTimeout(() => {
+          framingTimeout = null;
           applyInitialFraming();
-        } else {
-          framingTimeout = window.setTimeout(() => {
-            framingTimeout = null;
-            applyInitialFraming();
-          }, 6000);
-        }
+        }, 6000);
+      }
 
-        const jointGizmos = new Map<string, THREE.Object3D>();
-        for (const def of options.joints ?? []) {
-          const joint = urdfJoints?.[def.name];
-          if (!joint || !joint.axis) continue;
-          const gizmo = createJointAxisGizmo(joint.axis);
-          joint.add(gizmo);
-          jointGizmos.set(def.name, gizmo);
-        }
+      const jointGizmos = new Map<string, THREE.Object3D>();
+      for (const def of activeInstance.joints) {
+        const joint = urdfJoints?.[def.name];
+        if (!joint || !joint.axis) continue;
+        const gizmo = createJointAxisGizmo(joint.axis);
+        joint.add(gizmo);
+        jointGizmos.set(def.name, gizmo);
+      }
 
-        let allJointGizmosVisible = false;
+      let allJointGizmosVisible = false;
 
-        const setActiveJointGizmo = (name: string | null) => {
-          if (allJointGizmosVisible) {
-            // In "show all" mode keep every gizmo visible and slightly enlarge
-            // the currently hovered / selected one for emphasis.
-            for (const [jointName, gizmo] of jointGizmos) {
-              gizmo.scale.setScalar(jointName === name ? 1.3 : 1);
-            }
-            return;
-          }
+      const setActiveJointGizmo = (name: string | null) => {
+        if (allJointGizmosVisible) {
+          // In "show all" mode keep every gizmo visible and slightly enlarge
+          // the currently hovered / selected one for emphasis.
           for (const [jointName, gizmo] of jointGizmos) {
-            gizmo.visible = jointName === name;
+            gizmo.scale.setScalar(jointName === name ? 1.3 : 1);
           }
-        };
+          return;
+        }
+        for (const [jointName, gizmo] of jointGizmos) {
+          gizmo.visible = jointName === name;
+        }
+      };
 
-        const setAllJointGizmosVisible = (visible: boolean) => {
-          allJointGizmosVisible = visible;
-          for (const gizmo of jointGizmos.values()) {
-            gizmo.visible = visible;
-            if (!visible) gizmo.scale.setScalar(1);
-          }
-        };
+      const setAllJointGizmosVisible = (visible: boolean) => {
+        allJointGizmosVisible = visible;
+        for (const gizmo of jointGizmos.values()) {
+          gizmo.visible = visible;
+          if (!visible) gizmo.scale.setScalar(1);
+        }
+      };
 
-        const jointInteraction =
-          options.joints && options.joints.length > 0
-            ? createJointInteraction({
-                domElement: renderer.domElement,
-                camera,
-                robot,
-                joints: options.joints,
-                links: options.links ?? [],
-                controls,
-                onHover: (info) => options.onJointHover?.(info),
-                onSelect: (info) => options.onJointSelect?.(info),
-                onChange: (name, value) => options.onJointChange?.(name, value),
-                onDragEnd: (name, value) => options.onJointDragEnd?.(name, value),
-              })
-            : null;
+      const jointInteraction =
+        activeInstance.joints.length > 0
+          ? createJointInteraction({
+              domElement: renderer.domElement,
+              camera,
+              robot: activeRobot,
+              joints: activeInstance.joints,
+              links: activeInstance.links,
+              controls,
+              onHover: (info) => options.onJointHover?.(info),
+              onSelect: (info) => options.onJointSelect?.(info),
+              onChange: (name, value) => options.onJointChange?.(name, value),
+              onDragEnd: (name, value) => options.onJointDragEnd?.(name, value),
+            })
+          : null;
 
-        const dispose = () => {
-          stopScheduledSettle();
-          if (framingTimeout !== null) {
-            clearTimeout(framingTimeout);
-            framingTimeout = null;
-          }
-          jointInteraction?.dispose();
-          runtime?.dispose();
-          overlay.dispose();
-          pointCloudOverlay.dispose();
-          environment.dispose();
-          controls.dispose();
-          renderer.dispose();
-          if (container.contains(renderer.domElement)) {
-            container.removeChild(renderer.domElement);
-          }
-        };
+      const dispose = () => {
+        stopScheduledSettle();
+        if (framingTimeout !== null) {
+          clearTimeout(framingTimeout);
+          framingTimeout = null;
+        }
+        jointInteraction?.dispose();
+        runtime?.dispose();
+        overlay.dispose();
+        pointCloudOverlay.dispose();
+        environment.dispose();
+        controls.dispose();
+        renderer.dispose();
+        if (container.contains(renderer.domElement)) {
+          container.removeChild(renderer.domElement);
+        }
+      };
 
-        const resize = () => runtime?.resize();
+      const resize = () => runtime?.resize();
 
-        resolve({
-          scene,
-          camera,
-          renderer,
-          controls,
-          robot,
-          tcp,
-          applyJointState,
-          applyJointPositions,
-          dispose,
-          resize,
-          computeEndEffectorPath,
-          setTrajectoryPath: overlay.setTrajectoryPath,
-          setPathPlayhead: overlay.setPathPlayhead,
-          setPointCloud: pointCloudOverlay.setPointCloud,
-          setPointCloudVisible: pointCloudOverlay.setVisible,
-          runtime,
-          environment,
-          jointInteraction,
-          jointDefinitions: options.joints ?? [],
-          linkDefinitions: options.links ?? [],
-          setActiveJointGizmo,
-          setAllJointGizmosVisible,
-        });
-      })
-      .catch((err: unknown) => reject(err));
+      resolve({
+        scene,
+        camera,
+        renderer,
+        controls,
+        robot: activeRobot,
+        tcp,
+        applyJointState,
+        applyJointPositions,
+        dispose,
+        resize,
+        computeEndEffectorPath,
+        setTrajectoryPath: overlay.setTrajectoryPath,
+        setPathPlayhead: overlay.setPathPlayhead,
+        setPointCloud: pointCloudOverlay.setPointCloud,
+        setPointCloudVisible: pointCloudOverlay.setVisible,
+        runtime,
+        environment,
+        jointInteraction,
+        jointDefinitions: activeInstance.joints,
+        linkDefinitions: activeInstance.links,
+        setActiveJointGizmo,
+        setAllJointGizmosVisible,
+      });
+    } catch (err) {
+      reject(err);
+    }
   });
 }
 

@@ -15,6 +15,7 @@ import {
 import {
   createFallbackScene,
   createURDFScene,
+  type RobotInstanceRender,
   type SceneHandles,
 } from '@/lib/urdfScene';
 import { JointStateStream } from '@/lib/jointStream';
@@ -36,7 +37,6 @@ import type {
   Pose,
   SafetyReport,
 } from '@/types';
-import type { URDFJointDefinition } from '@/lib/urdfJoints';
 import { useRobotStore } from '@/store/robotStore';
 import { useConnectionStore } from '@/store/connectionStore';
 import { rosClientRef } from '@/lib/rosRef';
@@ -57,12 +57,8 @@ import { rosClientRef } from '@/lib/rosRef';
  */
 
 export interface RobotTwinProps {
-  /** URL of the URDF to render; `null` renders the procedural fallback arm. */
-  urdfUrl: string | null;
-  /** URDF joint definitions: drive safety checks and wrap-aware interpolation. */
-  joints?: URDFJointDefinition[];
-  /** Parsed link metadata for the interactive inspector. */
-  links?: import('@/lib/urdfJoints').URDFLinkDefinition[];
+  /** Robot instances to render in the twin. */
+  instances: RobotInstanceRender[];
   /** End-effector polyline to overlay, or null to clear it. */
   trajectoryPath?: THREE.Vector3[] | null;
   /** Playhead marker position along the trajectory. */
@@ -114,9 +110,7 @@ const STANDARD_VIEWS: Array<{ axis: StandardViewAxis; label: string }> = [
 ];
 
 export function RobotTwin({
-  urdfUrl,
-  joints = [],
-  links = [],
+  instances,
   trajectoryPath,
   playhead,
   pointCloud,
@@ -174,9 +168,14 @@ export function RobotTwin({
   const customScenesRef = useRef(customScenes);
   customScenesRef.current = customScenes;
 
+  const activeJoints = useMemo(
+    () => instances.find((item) => item.isActive)?.joints ?? instances[0]?.joints ?? [],
+    [instances]
+  );
+
   const continuousJoints = useMemo(
-    () => new Set(joints.filter((j) => j.type === 'continuous').map((j) => j.name)),
-    [joints]
+    () => new Set(activeJoints.filter((j) => j.type === 'continuous').map((j) => j.name)),
+    [activeJoints]
   );
 
   const streamRef = useRef<JointStateStream | null>(null);
@@ -258,7 +257,7 @@ export function RobotTwin({
     const handleJointDragEnd = (name: string, value: number) => {
       setJointTarget(name, value);
       if (!useSimulationRef.current) {
-        const names = joints.map((j) => j.name);
+        const names = activeJoints.map((j) => j.name);
         const positions = names.map((n) => useRobotStore.getState().jointTargets[n] ?? 0);
         try {
           rosClientRef.current?.publishJointCommand(names, positions);
@@ -268,20 +267,19 @@ export function RobotTwin({
       }
     };
 
-    const build = urdfUrl
-      ? createURDFScene(container, urdfUrl, {
-          ...poseCallback,
-          environment: sceneCallbacks,
-          joints,
-          links,
-          onJointHover: handleJointHover,
-          onJointSelect: handleJointSelect,
-          onJointChange: handleJointChange,
-          onJointDragEnd: handleJointDragEnd,
-        })
-      : Promise.resolve(
-          createFallbackScene(container, { ...poseCallback, environment: sceneCallbacks })
-        );
+    const build =
+      instances.length > 0
+        ? createURDFScene(container, instances, {
+            ...poseCallback,
+            environment: sceneCallbacks,
+            onJointHover: handleJointHover,
+            onJointSelect: handleJointSelect,
+            onJointChange: handleJointChange,
+            onJointDragEnd: handleJointDragEnd,
+          })
+        : Promise.resolve(
+            createFallbackScene(container, { ...poseCallback, environment: sceneCallbacks })
+          );
 
     build
       .then(attach)
@@ -299,10 +297,11 @@ export function RobotTwin({
       handlesRef.current = null;
       setReady(false);
     };
-    // The scene lifecycle is intentionally tied only to the URDF source.
-    // Joint/link metadata come from the same URDF and arrive together with urdfUrl.
+    // The scene lifecycle is tied to the robot instance list. Deep changes
+    // (URDF text, transform) rebuild the scene; simple position edits could be
+    // reconciled later for performance.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [urdfUrl]);
+  }, [instances]);
 
   // ---- high frequency data path (no React state) -------------------------
   useEffect(() => {
@@ -358,7 +357,7 @@ export function RobotTwin({
         byName[name] = positions[index];
       });
 
-      const jointWarnings = evaluateJointLimits(joints, byName);
+      const jointWarnings = evaluateJointLimits(activeJoints, byName);
       const links = runtime.getLinkNodes();
       const proximity = detectLinkProximity({
         links,
@@ -393,7 +392,7 @@ export function RobotTwin({
     }, SAFETY_INTERVAL_MS);
 
     return () => window.clearInterval(id);
-  }, [ready, joints, stream]);
+  }, [ready, activeJoints, stream]);
 
   // ---- overlays ----------------------------------------------------------
   useEffect(() => {

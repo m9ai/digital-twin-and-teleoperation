@@ -5,12 +5,16 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Crosshair,
   Edit3,
+  Eye,
+  EyeOff,
   FileCode2,
   FileText,
   FolderOpen,
   FolderTree,
   RotateCcw,
+  Trash2,
   UploadCloud,
   X,
 } from 'lucide-react';
@@ -107,6 +111,7 @@ function FileLeafRow({
   sourceId,
   onRemove,
   onSelect,
+  onAppend,
 }: {
   leaf: FileLeaf;
   depth: number;
@@ -114,6 +119,7 @@ function FileLeafRow({
   sourceId: string;
   onRemove: (sourceId: string, path: string) => void;
   onSelect: (sourceId: string, path: string) => void;
+  onAppend: (sourceId: string, path: string) => void;
 }) {
   const Icon = leaf.kind === 'mesh' ? Box : leaf.kind === 'other' ? FileCode2 : FileText;
   const selectable = !isEntry && (leaf.kind === 'urdf' || leaf.kind === 'xacro');
@@ -135,13 +141,22 @@ function FileLeafRow({
         </span>
       )}
       {selectable && (
-        <button
-          onClick={() => onSelect(sourceId, leaf.path)}
-          className="shrink-0 text-[10px] text-slate-600 opacity-0 transition-opacity hover:text-cyan-300 group-hover:opacity-100"
-          title="将该模型渲染到数字孪生"
-        >
-          设为当前
-        </button>
+        <>
+          <button
+            onClick={() => onSelect(sourceId, leaf.path)}
+            className="shrink-0 text-[10px] text-slate-600 opacity-0 transition-opacity hover:text-cyan-300 group-hover:opacity-100"
+            title="将该模型渲染到数字孪生"
+          >
+            设为当前
+          </button>
+          <button
+            onClick={() => onAppend(sourceId, leaf.path)}
+            className="shrink-0 text-[10px] text-slate-600 opacity-0 transition-opacity hover:text-emerald-300 group-hover:opacity-100"
+            title="追加一个该模型的副本"
+          >
+            追加
+          </button>
+        </>
       )}
       <button
         onClick={() => onRemove(sourceId, leaf.path)}
@@ -161,6 +176,7 @@ function DirectoryRow({
   entryPath,
   onRemove,
   onSelect,
+  onAppend,
 }: {
   node: DirectoryNode;
   depth: number;
@@ -168,6 +184,7 @@ function DirectoryRow({
   entryPath: string | null;
   onRemove: (sourceId: string, path: string) => void;
   onSelect: (sourceId: string, path: string) => void;
+  onAppend: (sourceId: string, path: string) => void;
 }) {
   const [open, setOpen] = useState(true);
 
@@ -199,6 +216,7 @@ function DirectoryRow({
               entryPath={entryPath}
               onRemove={onRemove}
               onSelect={onSelect}
+              onAppend={onAppend}
             />
           ))}
           {node.files.map((leaf) => (
@@ -210,6 +228,7 @@ function DirectoryRow({
               sourceId={sourceId}
               onRemove={onRemove}
               onSelect={onSelect}
+              onAppend={onAppend}
             />
           ))}
         </>
@@ -230,12 +249,14 @@ function SourceRow({
   onRemoveSource,
   onRemoveFile,
   onSelectEntry,
+  onAppendEntry,
 }: {
   source: ModelSource;
   active: boolean;
   onRemoveSource: (sourceId: string) => void;
   onRemoveFile: (sourceId: string, path: string) => void;
   onSelectEntry: (sourceId: string, path: string) => void;
+  onAppendEntry: (sourceId: string, path: string) => void;
 }) {
   const [open, setOpen] = useState(true);
   const tree = useMemo(() => buildFileTree(source.files), [source.files]);
@@ -287,6 +308,7 @@ function SourceRow({
               entryPath={source.entryPath}
               onRemove={onRemoveFile}
               onSelect={onSelectEntry}
+              onAppend={onAppendEntry}
             />
           ))}
           {tree.files.map((leaf) => (
@@ -298,10 +320,63 @@ function SourceRow({
               sourceId={source.id}
               onRemove={onRemoveFile}
               onSelect={onSelectEntry}
+              onAppend={onAppendEntry}
             />
           ))}
         </>
       )}
+    </div>
+  );
+}
+
+function InstanceRow({
+  instance,
+  isActive,
+  onActivate,
+  onToggleVisible,
+  onRemove,
+}: {
+  instance: import('@/store/urdfStore').RobotInstance;
+  isActive: boolean;
+  onActivate: () => void;
+  onToggleVisible: () => void;
+  onRemove: () => void;
+}) {
+  const { x, y, z } = instance.transform;
+  return (
+    <div
+      onClick={onActivate}
+      className={`group flex cursor-pointer items-center gap-1.5 rounded py-0.5 pr-1 text-xs ${
+        isActive ? 'bg-cyan-500/10 text-cyan-300 ring-1 ring-cyan-500/30' : 'text-slate-400 hover:bg-slate-700/50'
+      }`}
+    >
+      <Crosshair className={`h-3 w-3 shrink-0 ${isActive ? 'text-cyan-400' : 'text-slate-600'}`} />
+      <span className="truncate" title={instance.name}>
+        {instance.name}
+      </span>
+      <span className="truncate text-[10px] text-slate-500">
+        ({x.toFixed(2)}, {y.toFixed(2)}, {z.toFixed(2)})
+      </span>
+      <button
+        onClick={(event) => {
+          event.stopPropagation();
+          onToggleVisible();
+        }}
+        className="ml-auto shrink-0 text-slate-600 opacity-0 transition-opacity hover:text-slate-300 group-hover:opacity-100"
+        title={instance.visible ? '隐藏' : '显示'}
+      >
+        {instance.visible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+      </button>
+      <button
+        onClick={(event) => {
+          event.stopPropagation();
+          onRemove();
+        }}
+        className="shrink-0 text-slate-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+        title="移除实例"
+      >
+        <Trash2 className="h-3 w-3" />
+      </button>
     </div>
   );
 }
@@ -326,6 +401,8 @@ export function URDFUploadPanel() {
     isLoading,
     sources,
     activeSourceId,
+    instances,
+    activeInstanceId,
     resolvedMeshes,
     missingMeshes,
     unresolvedReplaced,
@@ -334,6 +411,10 @@ export function URDFUploadPanel() {
     loadModelFiles,
     addModelSource,
     setActiveModelFile,
+    addRobotInstance,
+    removeRobotInstance,
+    setActiveInstance,
+    setInstanceVisible,
     removeModelSource,
     removeModelFile,
     setError,
@@ -551,6 +632,26 @@ export function URDFUploadPanel() {
                   onRemoveSource={removeModelSource}
                   onRemoveFile={removeModelFile}
                   onSelectEntry={setActiveModelFile}
+                  onAppendEntry={addRobotInstance}
+                />
+              ))}
+            </div>
+          )}
+
+          {instances.length > 0 && (
+            <div className="max-h-48 overflow-y-auto rounded-lg bg-slate-800/40 px-2 py-2 text-xs">
+              <div className="mb-1 flex items-center justify-between px-1 text-slate-500">
+                <span>已渲染机器人（{instances.length}）</span>
+                <span className="text-[10px]">点击切换当前交互对象</span>
+              </div>
+              {instances.map((instance) => (
+                <InstanceRow
+                  key={instance.id}
+                  instance={instance}
+                  isActive={instance.id === activeInstanceId}
+                  onActivate={() => setActiveInstance(instance.id)}
+                  onToggleVisible={() => setInstanceVisible(instance.id, !instance.visible)}
+                  onRemove={() => removeRobotInstance(instance.id)}
                 />
               ))}
             </div>
