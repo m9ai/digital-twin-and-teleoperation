@@ -1,10 +1,10 @@
 {
     "models": [
-        {"name": "人形机器人", "avatar": "https://ebot.m9ai.work/assets/atlas_v4.png", "desc": "五轴六自由度机械臂示例", "source": "https://ebot.m9ai.work/assets/industrial-5axis-arm.urdf"},
+        {"name": "人形机器人", "avatar": "https://ebot.m9ai.work/assets/atlas_v4.png", "desc": "人形机器人示例", "source": "https://ebot.m9ai.work/assets/industrial-5axis-arm.urdf"},
         {"name": "四足机器狗", "avatar": "", "desc": "五轴六自由度机械臂示例", "source": "https://ebot.m9ai.work/assets/quadruped-robot-dog.urdf"},
         {"name": "轮式机器人", "avatar": "", "desc": "轮式机器人 URDF 模型", "source": "https://ebot.m9ai.work/assets/mock-robot.urdf"},
         {"name": "无人机机器人", "avatar": "", "desc": "无人机机器人 URDF 模型", "source": "https://ebot.m9ai.work/assets/mock-robot.urdf"},
-        {"name": "灵巧手机器人", "avatar": "", "desc": "灵巧手机器人 URDF 模型", "source": "https://ebot.m9ai.work/assets/mock-robot.urdf"},
+        {"name": "灵巧手机器人", "avatar": "https://ebot.m9ai.work/assets/allegro_hand.png", "desc": "灵巧手机器人 URDF 模型", "source": "https://ebot.m9ai.work/assets/finger.zip"},
         {"name": "越野车机器人", "avatar": "", "desc": "越野车机器人 URDF 模型", "source": "https://ebot.m9ai.work/assets/mock-robot.urdf"}
     ],
     "others": [
