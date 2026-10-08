@@ -4,8 +4,7 @@
         {"name": "四足机器狗", "avatar": "", "desc": "五轴六自由度机械臂示例", "source": "https://ebot.m9ai.work/assets/dog.zip"},
         {"name": "轮式机器人", "avatar": "", "desc": "轮式机器人 URDF 模型", "source": "https://ebot.m9ai.work/assets/car.zip"},
         {"name": "无人机机器人", "avatar": "", "desc": "无人机机器人 URDF 模型", "source": "https://ebot.m9ai.work/assets/drone.zip"},
-        {"name": "灵巧手机器人", "avatar": "https://ebot.m9ai.work/assets/allegro_hand.png", "desc": "灵巧手机器人 URDF 模型", "source": "https://ebot.m9ai.work/assets/finger.zip"},
-        {"name": "越野车机器人", "avatar": "", "desc": "越野车机器人 URDF 模型", "source": "https://ebot.m9ai.work/assets/mock-robot.urdf"}
+        {"name": "灵巧手机器人", "avatar": "https://ebot.m9ai.work/assets/allegro_hand.png", "desc": "灵巧手机器人 URDF 模型", "source": "https://ebot.m9ai.work/assets/finger.zip"}
     ],
     "others": [
         {"name": "URDF 模型", "desc": "URDF 机器人模型", "source": "https://ebot.m9ai.work/assets/industrial-5axis-arm.urdf"},
