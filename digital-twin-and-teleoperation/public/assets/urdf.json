@@ -1,6 +1,6 @@
 {
     "models": [
-        {"name": "人形机器人", "avatar": "https://ebot.m9ai.work/assets/atlas_v4.png", "desc": "人形机器人示例", "source": "https://ebot.m9ai.work/assets/industrial-5axis-arm.urdf"},
+        {"name": "人形机器人", "avatar": "https://ebot.m9ai.work/assets/atlas_v4.png", "desc": "人形机器人示例", "source": "https://ebot.m9ai.work/assets/humanoid.zip"},
         {"name": "四足机器狗", "avatar": "", "desc": "五轴六自由度机械臂示例", "source": "https://ebot.m9ai.work/assets/quadruped-robot-dog.urdf"},
         {"name": "轮式机器人", "avatar": "", "desc": "轮式机器人 URDF 模型", "source": "https://ebot.m9ai.work/assets/mock-robot.urdf"},
         {"name": "无人机机器人", "avatar": "", "desc": "无人机机器人 URDF 模型", "source": "https://ebot.m9ai.work/assets/mock-robot.urdf"},
